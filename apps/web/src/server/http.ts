@@ -6,12 +6,31 @@ import type { SessionUser } from './auth/sessions';
 import { currentUser } from './auth/session';
 import { ConversationError } from './conversations/service';
 
-export interface ApiErrorBody {
-  error: { code: string; message: string };
+export interface ApiError {
+  readonly status: number;
+  readonly code: string;
+  readonly message: string;
 }
 
 export const apiError = (status: number, code: string, message: string) =>
-  NextResponse.json<ApiErrorBody>({ error: { code, message } }, { status });
+  NextResponse.json({ error: { code, message } }, { status });
+
+/** Traduz qualquer erro para uma resposta segura (sem detalhes internos). */
+export function describeError(err: unknown): ApiError {
+  if (err instanceof ConversationError) return { status: err.status, code: err.code, message: err.message };
+  if (err instanceof z.ZodError) {
+    return { status: 400, code: 'validation_error', message: err.issues[0]?.message ?? 'Dados inválidos.' };
+  }
+  if (err instanceof ServiceDeskError && err.kind === 'unavailable') {
+    return {
+      status: 503,
+      code: 'service_desk_unavailable',
+      message: 'O sistema de chamados está indisponível. Tente em instantes.',
+    };
+  }
+  console.error('[api] erro inesperado', err);
+  return { status: 500, code: 'internal_error', message: 'Algo deu errado do nosso lado. Tente de novo.' };
+}
 
 /**
  * Proteção contra CSRF em rotas que mudam estado: além do cookie SameSite=Lax,
@@ -27,30 +46,20 @@ function sameOrigin(req: Request): boolean {
   }
 }
 
-type Handler = (user: SessionUser, req: Request) => Promise<Response>;
+type Handler<C> = (user: SessionUser, req: Request, ctx: C) => Promise<Response>;
 
 /** Envolve uma rota de API: autenticação, papel, origem e tradução de erros. */
-export function withUser(role: 'employee' | 'analyst', handler: Handler) {
-  return async (req: Request): Promise<Response> => {
+export function withUser<C = unknown>(role: 'employee' | 'analyst', handler: Handler<C>) {
+  return async (req: Request, ctx: C): Promise<Response> => {
     if (req.method !== 'GET' && !sameOrigin(req)) return apiError(403, 'forbidden', 'Origem não permitida.');
     const user = await currentUser();
     if (!user) return apiError(401, 'unauthorized', 'Sua sessão expirou. Entre de novo.');
     if (user.role !== role) return apiError(403, 'forbidden', 'Acesso não permitido para o seu perfil.');
     try {
-      return await handler(user, req);
+      return await handler(user, req, ctx);
     } catch (err) {
-      if (err instanceof ConversationError) return apiError(err.status, err.code, err.message);
-      if (err instanceof z.ZodError)
-        return apiError(400, 'validation_error', err.issues[0]?.message ?? 'Dados inválidos.');
-      if (err instanceof ServiceDeskError && err.kind === 'unavailable') {
-        return apiError(
-          503,
-          'service_desk_unavailable',
-          'O sistema de chamados está indisponível. Tente em instantes.',
-        );
-      }
-      console.error('[api] erro inesperado', err);
-      return apiError(500, 'internal_error', 'Algo deu errado do nosso lado. Tente de novo.');
+      const e = describeError(err);
+      return apiError(e.status, e.code, e.message);
     }
   };
 }

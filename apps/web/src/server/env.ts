@@ -9,6 +9,15 @@ const EnvSchema = z.object({
   SERVICE_DESK_URL: opt(z.url().default('http://localhost:4010')),
   SERVICE_DESK_API_KEY: opt(z.string().min(16).default('dev-only-service-desk-key')),
   APP_DATABASE_URL: opt(z.string().default('file:data/app.db')),
+
+  // IA: provedor principal, plano B e modelos. Sem chave, o provedor é ignorado.
+  LLM_PROVIDER: opt(z.enum(['google', 'groq', 'none']).default('google')),
+  LLM_FALLBACK_PROVIDER: opt(z.enum(['google', 'groq', 'none']).default('groq')),
+  LLM_GOOGLE_MODEL: opt(z.string().default('gemini-flash-lite-latest')),
+  LLM_GROQ_MODEL: opt(z.string().default('openai/gpt-oss-120b')),
+  GOOGLE_GENERATIVE_AI_API_KEY: opt(z.string().optional()),
+  GOOGLE_API_KEY: opt(z.string().optional()),
+  GROQ_API_KEY: opt(z.string().optional()),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;

@@ -26,6 +26,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
+    "agent:smoke": "npm run agent:smoke -w @nexo/web",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

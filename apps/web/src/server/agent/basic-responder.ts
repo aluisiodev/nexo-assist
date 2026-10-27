@@ -4,7 +4,7 @@ import type { AgentStep, AgentTrace, MessageBlock, QuickReply } from '../../lib/
 import { toTicketSummary } from './ticket-summary';
 import type { AgentContext, AgentReply, AgentResponder, HandoffRequest, ServiceDeskAccess } from './types';
 
-export const BASIC_ENGINE = 'modo básico (sem IA)';
+export const BASIC_ENGINE = 'regras do service desk (sem IA)';
 
 const TICKET_ID = /\b(INC|REQ)[\s-]?(\d{3,})\b/i;
 const COMMENT = /^\s*(INC|REQ)[\s-]?(\d{3,})\s*[:\-–]\s*(.{10,})$/is;

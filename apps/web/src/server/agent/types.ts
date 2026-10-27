@@ -1,6 +1,6 @@
 import type { HandoffReason, SupportGroup } from '@nexo/domain';
 import type { ActorServiceDeskClient, RetryInfo, ServiceDeskClient } from '@nexo/service-desk-client';
-import type { AgentTrace, ChatMessage, MessageBlock } from '../../lib/chat';
+import type { AgentStep, AgentTrace, ChatMessage, DraftView, MessageBlock } from '../../lib/chat';
 import type { SessionUser } from '../auth/sessions';
 import type { Conversation } from '../conversations/repository';
 
@@ -18,7 +18,14 @@ export interface AgentContext {
   /** Id da mensagem atual: base para chaves de idempotência das ações. */
   readonly messageId: string;
   readonly now: Date;
+  /** Rascunho aguardando confirmação nesta conversa, se houver. */
+  readonly pendingDraft?: DraftView | null;
 }
+
+/** Progresso enviado ao navegador enquanto a resposta é gerada. */
+export type AgentEvent =
+  { readonly type: 'step'; readonly step: AgentStep } | { readonly type: 'text'; readonly delta: string };
+export type AgentEmitter = (event: AgentEvent) => void;
 
 export interface AgentReplyMessage {
   readonly text: string;
@@ -44,7 +51,22 @@ export interface AgentReply {
 export interface AgentResponder {
   /** Nome exibido no registro de decisões (ex.: "gemini-flash-lite" ou "modo básico"). */
   readonly name: string;
-  respond(ctx: AgentContext): Promise<AgentReply>;
+  respond(ctx: AgentContext, emit?: AgentEmitter): Promise<AgentReply>;
+}
+
+/**
+ * Falha do provedor de IA (cota, fora do ar, chave inválida, tempo esgotado).
+ * Sinaliza para a cadeia de reserva tentar o próximo.
+ */
+export class ResponderUnavailableError extends Error {
+  constructor(
+    readonly responder: string,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'ResponderUnavailableError';
+  }
 }
 
 /** Acesso ao service desk para uma resposta, com observação dos retries (vão para o trace). */

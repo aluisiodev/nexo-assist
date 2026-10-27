@@ -1,11 +1,13 @@
 import 'server-only';
 import { createServiceDeskClient, type ServiceDeskClient } from '@nexo/service-desk-client';
-import { BasicResponder } from './agent/basic-responder';
+import { buildResponder } from './agent/build-responder';
 import type { AgentResponder, ServiceDeskAccess } from './agent/types';
 import { SessionRepository } from './auth/sessions';
 import { ConversationRepository } from './conversations/repository';
 import { ConversationService } from './conversations/service';
 import { openAppDatabase } from './db/open';
+import { DraftRepository } from './drafts/repository';
+import { DraftService } from './drafts/service';
 import { env } from './env';
 
 export interface Container {
@@ -34,21 +36,36 @@ async function build(): Promise<Container> {
     forActor: (employeeId, opts) =>
       createServiceDeskClient({ ...clientOptions, ...(opts?.onRetry ? { onRetry: opts.onRetry } : {}) }).forActor(
         employeeId,
-        {
-          viaAgent: true,
-        },
+        { viaAgent: true },
       ),
     searchArticles: (q, limit) => serviceDesk.searchArticles(q, limit),
   };
 
-  // Etapa atual: modo básico. O agent com LLM entra aqui, com o modo básico como reserva.
-  const responder: AgentResponder = new BasicResponder(serviceDeskAccess);
   const conversationRepo = new ConversationRepository(db);
+  const drafts = new DraftService(new DraftRepository(db), conversationRepo);
+
+  const { responder, chain } = buildResponder(
+    {
+      provider: e.LLM_PROVIDER,
+      fallbackProvider: e.LLM_FALLBACK_PROVIDER,
+      googleModel: e.LLM_GOOGLE_MODEL,
+      groqModel: e.LLM_GROQ_MODEL,
+      hasGoogleKey: Boolean(e.GOOGLE_GENERATIVE_AI_API_KEY ?? e.GOOGLE_API_KEY),
+      hasGroqKey: Boolean(e.GROQ_API_KEY),
+    },
+    { serviceDesk: serviceDeskAccess, drafts },
+  );
+  console.log(`[agent] quem responde, em ordem: ${chain.join(' → ')}`);
 
   return {
     sessions: new SessionRepository(db),
     conversationRepo,
-    conversations: new ConversationService({ repo: conversationRepo, responder, serviceDesk: serviceDeskAccess }),
+    conversations: new ConversationService({
+      repo: conversationRepo,
+      responder,
+      serviceDesk: serviceDeskAccess,
+      drafts,
+    }),
     serviceDesk,
     serviceDeskAccess,
     responder,
