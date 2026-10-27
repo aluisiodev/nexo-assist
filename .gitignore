@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Variáveis de ambiente (use .env.example como modelo)
+.env
+.env.*
+!.env.example
+
+# Bancos locais
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log

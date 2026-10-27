@@ -1,0 +1,29 @@
+{
+  "name": "nexo-assist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexo Assist: agent de atendimento do service desk de TI da Nexo",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "dev:service-desk": "npm run dev -w @nexo/service-desk",
+    "start:service-desk": "npm run start -w @nexo/service-desk",
+    "db:seed": "npm run db:seed -w @nexo/service-desk",
+    "db:reset": "npm run db:reset -w @nexo/service-desk",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
