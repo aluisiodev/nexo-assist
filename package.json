@@ -6,22 +6,33 @@
   "description": "Nexo Assist: agent de atendimento do service desk de TI da Nexo",
   "workspaces": [
     "packages/*",
-    "services/*"
+    "services/*",
+    "apps/*"
   ],
   "engines": {
     "node": ">=20.12"
   },
   "scripts": {
+    "dev": "concurrently -k -n desk,web -c blue,green \"npm:dev:service-desk\" \"npm:dev:web\"",
+    "build": "npm run build -w @nexo/web",
+    "start": "concurrently -k -n desk,web -c blue,green \"npm:start:service-desk\" \"npm:start:web\"",
+    "dev:web": "npm run dev -w @nexo/web",
     "dev:service-desk": "npm run dev -w @nexo/service-desk",
+    "build:web": "npm run build -w @nexo/web",
+    "start:web": "npm run start -w @nexo/web",
     "start:service-desk": "npm run start -w @nexo/service-desk",
     "db:seed": "npm run db:seed -w @nexo/service-desk",
     "db:reset": "npm run db:reset -w @nexo/service-desk",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "concurrently": "^9.2.5",
+    "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
