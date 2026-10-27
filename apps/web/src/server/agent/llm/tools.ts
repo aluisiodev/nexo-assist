@@ -16,7 +16,7 @@ import {
 import { ServiceDeskError } from '@nexo/service-desk-client';
 import { z } from 'zod';
 import { formatDateTime, formatRelative } from '../../../lib/format';
-import type { TurnState } from './turn';
+import type { FinalAnswer, TurnState } from './turn';
 
 /**
  * Ferramentas do Nexo Assist. Cada uma lê o turno atual do RequestContext: o id do
@@ -383,48 +383,49 @@ export const transferirParaAnalista = createTool({
   },
 });
 
+/** Campos da resposta final (também usados para ler a resposta quando o modelo a escreve como texto). */
+export const ResponderInputSchema = z.object({
+  mensagem: z.string().min(1).max(1200).describe('Texto para o funcionário, em português, curto e claro, sem markdown'),
+  intencao: z
+    .string()
+    .describe(
+      'Intenção identificada, em snake_case: ex. abrir_chamado, consultar_chamado, duvida, complementar_chamado, falar_com_analista, fora_do_escopo, saudacao',
+    ),
+  entendimento: z.string().describe('Em uma frase, o que você entendeu que o funcionário quer'),
+  confianca: z.number().min(0).max(1).describe('Sua segurança na decisão, de 0 a 1'),
+  motivo: z.string().describe('Por que escolheu esta ação, citando a regra do service desk quando houver'),
+  mostrar_chamados: z
+    .array(z.string())
+    .max(5)
+    .default([])
+    .describe('Números de chamados consultados neste turno para mostrar como card (1) ou lista para escolher (vários)'),
+  mostrar_artigo: z.string().optional().describe('Id do artigo da central de ajuda para mostrar, se for útil'),
+  pergunta: z.string().optional().describe('Pergunta destacada, quando precisar de uma informação'),
+  opcoes: z.array(z.string().max(60)).max(4).default([]).describe('Opções rápidas de resposta (até 4)'),
+});
+
+export function toFinalAnswer(input: z.output<typeof ResponderInputSchema>): FinalAnswer {
+  return {
+    message: input.mensagem,
+    intent: input.intencao,
+    understood: input.entendimento,
+    confidence: input.confianca,
+    reasoning: input.motivo,
+    showTickets: input.mostrar_chamados,
+    showArticle: input.mostrar_artigo,
+    question: input.pergunta,
+    options: input.opcoes,
+  };
+}
+
 export const responder = createTool({
   id: 'responder',
   description:
     'Entrega a resposta final ao funcionário. Chame SEMPRE uma vez, por último, em todo turno. Os campos de decisão ficam visíveis em "por quê?".',
-  inputSchema: z.object({
-    mensagem: z
-      .string()
-      .min(1)
-      .max(1200)
-      .describe('Texto para o funcionário, em português, curto e claro, sem markdown'),
-    intencao: z
-      .string()
-      .describe(
-        'Intenção identificada, em snake_case: ex. abrir_chamado, consultar_chamado, duvida, complementar_chamado, falar_com_analista, fora_do_escopo, saudacao',
-      ),
-    entendimento: z.string().describe('Em uma frase, o que você entendeu que o funcionário quer'),
-    confianca: z.number().min(0).max(1).describe('Sua segurança na decisão, de 0 a 1'),
-    motivo: z.string().describe('Por que escolheu esta ação, citando a regra do service desk quando houver'),
-    mostrar_chamados: z
-      .array(z.string())
-      .max(5)
-      .default([])
-      .describe(
-        'Números de chamados consultados neste turno para mostrar como card (1) ou lista para escolher (vários)',
-      ),
-    mostrar_artigo: z.string().optional().describe('Id do artigo da central de ajuda para mostrar, se for útil'),
-    pergunta: z.string().optional().describe('Pergunta destacada, quando precisar de uma informação'),
-    opcoes: z.array(z.string().max(60)).max(4).default([]).describe('Opções rápidas de resposta (até 4)'),
-  }),
+  inputSchema: ResponderInputSchema,
   execute: async (input, context) => {
     const turn = turnOf(context);
-    turn.final = {
-      message: input.mensagem,
-      intent: input.intencao,
-      understood: input.entendimento,
-      confidence: input.confianca,
-      reasoning: input.motivo,
-      showTickets: input.mostrar_chamados,
-      showArticle: input.mostrar_artigo,
-      question: input.pergunta,
-      options: input.opcoes,
-    };
+    turn.final = toFinalAnswer(input);
     return { ok: true };
   },
 });

@@ -12,7 +12,7 @@ import {
 } from '../types';
 import { toModelMessages } from './history';
 import { buildInstructions } from './instructions';
-import { NEXO_TOOLS, TURN_KEY } from './tools';
+import { NEXO_TOOLS, ResponderInputSchema, toFinalAnswer, TURN_KEY } from './tools';
 import { TurnState, type TurnDeps } from './turn';
 
 type AgentModel = ConstructorParameters<typeof Agent>[0]['model'];
@@ -25,6 +25,13 @@ export interface LlmResponderOptions {
   readonly deps: TurnDeps;
   readonly maxSteps?: number;
   readonly timeoutMs?: number;
+  /**
+   * 'required' obriga o modelo a sempre usar uma ferramenta (garante o registro da
+   * decisão). Nem todo provedor aceita bem: no Groq, usar 'auto'.
+   */
+  readonly toolChoice?: 'required' | 'auto';
+  /** Opções específicas do provedor (ex.: esforço de raciocínio no Groq). */
+  readonly providerOptions?: Record<string, Record<string, string>>;
 }
 
 /** Abaixo disso, sem outra ação, o agent pede ajuda a um analista (Anexo A). */
@@ -41,12 +48,16 @@ export class LlmResponder implements AgentResponder {
   private readonly deps: TurnDeps;
   private readonly maxSteps: number;
   private readonly timeoutMs: number;
+  private readonly toolChoice: 'required' | 'auto';
+  private readonly providerOptions: Record<string, Record<string, string>> | undefined;
 
   constructor(opts: LlmResponderOptions) {
     this.name = opts.name;
     this.deps = opts.deps;
     this.maxSteps = opts.maxSteps ?? 8;
     this.timeoutMs = opts.timeoutMs ?? 45_000;
+    this.toolChoice = opts.toolChoice ?? 'required';
+    this.providerOptions = opts.providerOptions;
     this.agent = new Agent({
       id: 'nexo-assist',
       name: 'Nexo Assist',
@@ -70,7 +81,8 @@ export class LlmResponder implements AgentResponder {
         maxSteps: this.maxSteps,
         // Para assim que a resposta final é entregue (sem um passo extra de texto).
         stopWhen: [() => turn.final !== null],
-        toolChoice: 'required',
+        toolChoice: this.toolChoice,
+        ...(this.providerOptions ? { providerOptions: this.providerOptions } : {}),
         modelSettings: {
           temperature: 0.2,
           maxOutputTokens: 1200,
@@ -86,6 +98,19 @@ export class LlmResponder implements AgentResponder {
       tokens = usage?.totalTokens;
     } catch (err) {
       throw new ResponderUnavailableError(this.name, describeError(err), { cause: err });
+    }
+
+    // Alguns modelos (ex.: gpt-oss no Groq) escrevem a resposta final como JSON no texto
+    // em vez de chamar a ferramenta. Lemos esse JSON para não perder a decisão.
+    if (!turn.final && text.trim()) {
+      const salvaged = salvageFinalAnswer(text);
+      if (salvaged) {
+        turn.final = salvaged;
+        turn.steps.push({
+          label: 'leu a decisão escrita no texto',
+          detail: 'O modelo escreveu a resposta em JSON em vez de chamar a ferramenta "responder".',
+        });
+      }
     }
 
     const final = turn.final;
@@ -174,4 +199,20 @@ function describeError(err: unknown): string {
     if (e.message) return e.message.slice(0, 160);
   }
   return 'falha desconhecida do provedor';
+}
+
+/** Procura um objeto JSON com os campos da ferramenta `responder` dentro do texto. */
+export function salvageFinalAnswer(text: string): ReturnType<typeof toFinalAnswer> | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const raw = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+    // null → ausente (o schema usa campos opcionais).
+    const cleaned = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null));
+    const parsed = ResponderInputSchema.safeParse(cleaned);
+    return parsed.success ? toFinalAnswer(parsed.data) : null;
+  } catch {
+    return null;
+  }
 }

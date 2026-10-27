@@ -9,6 +9,8 @@ import { openAppDatabase } from './db/open';
 import { DraftRepository } from './drafts/repository';
 import { DraftService } from './drafts/service';
 import { env } from './env';
+import { AiBudget } from './limits/ai-budget';
+import { SlidingWindowRateLimiter } from './limits/rate-limiter';
 
 export interface Container {
   readonly sessions: SessionRepository;
@@ -17,6 +19,8 @@ export interface Container {
   readonly serviceDesk: ServiceDeskClient;
   readonly serviceDeskAccess: ServiceDeskAccess;
   readonly responder: AgentResponder;
+  /** Mensagens por minuto por funcionário. */
+  readonly chatRateLimit: SlidingWindowRateLimiter;
 }
 
 /**
@@ -54,8 +58,13 @@ async function build(): Promise<Container> {
       hasGroqKey: Boolean(e.GROQ_API_KEY),
     },
     { serviceDesk: serviceDeskAccess, drafts },
+    new AiBudget(db, e.AI_DAILY_CALL_LIMIT),
   );
   console.log(`[agent] quem responde, em ordem: ${chain.join(' → ')}`);
+  console.log(
+    `[limites] ${e.CHAT_RATE_LIMIT_PER_MINUTE || 'sem limite de'} mensagens/min por funcionário · ` +
+      `${e.AI_DAILY_CALL_LIMIT || 'sem cota de'} respostas com IA/dia`,
+  );
 
   return {
     sessions: new SessionRepository(db),
@@ -69,6 +78,7 @@ async function build(): Promise<Container> {
     serviceDesk,
     serviceDeskAccess,
     responder,
+    chatRateLimit: new SlidingWindowRateLimiter(e.CHAT_RATE_LIMIT_PER_MINUTE),
   };
 }
 

@@ -73,4 +73,10 @@ CREATE TABLE IF NOT EXISTS ticket_drafts (
   updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_drafts_conversation ON ticket_drafts (conversation_id, status);
+
+-- Respostas com IA por dia (fuso de São Paulo), para a cota diária.
+CREATE TABLE IF NOT EXISTS ai_usage (
+  day   TEXT PRIMARY KEY,                 -- "2026-10-27"
+  calls INTEGER NOT NULL
+);
 `;

@@ -96,6 +96,9 @@ async function buildService(provider: Provider) {
     model: `${provider}/${p.model}`,
     deps: { serviceDesk, drafts },
     toolChoice: p.toolChoice,
+    ...(provider === 'groq' && p.model.includes('gpt-oss')
+      ? { providerOptions: { groq: { reasoningEffort: 'low' } } }
+      : {}),
   });
   return new ConversationService({ repo, responder, serviceDesk, drafts, log: () => {} });
 }

@@ -130,6 +130,13 @@ Regras aplicadas depois da resposta, mesmo que o modelo esqueça:
 - **Limites:** até 8 passos por resposta, temperatura baixa, teto de tokens e tempo máximo por resposta.
 - **Tokens registrados** em cada resposta (visíveis no registro), para acompanhar o custo.
 
+### Limites de uso
+
+Para uma versão publicada não esgotar a cota gratuita de IA (e nem a paciência de ninguém), há dois limites, ambos no `.env` (0 desliga):
+
+- **`CHAT_RATE_LIMIT_PER_MINUTE` (padrão 10):** mensagens por minuto por funcionário. Uso normal nunca chega nele; quem passa vê "Aguarde N segundos" (HTTP 429 com `Retry-After`).
+- **`AI_DAILY_CALL_LIMIT` (padrão 300):** respostas com IA por dia no app todo, contadas no banco (sobrevivem a reinícios; o dia vira no fuso de São Paulo). Quando acaba, **o chat não bloqueia**: passa para o modo básico e o "por quê?" mostra que a cota foi atingida. Atalhos por regras não gastam cota.
+
 ### Visibilidade das decisões
 
 Toda resposta do agent guarda um registro (`trace`): o que entendeu, a intenção, as ações executadas (com detalhes), o grau de segurança, o motivo e quem respondeu. No chat, as ações aparecem acima da resposta ("consultou seus chamados · calculou o prazo") e o link **"por quê?"** abre o registro completo. Falhas e tentativas extras do sistema legado também aparecem ali.
@@ -167,6 +174,7 @@ Cabeçalhos: `x-api-key` (chave do serviço), `x-actor-id` (funcionário da sess
 | Regras do Anexo A | Testes unitários com relógio fixo (`packages/domain/test`) |
 | Service desk | Testes da API real com banco temporário: privacidade, duplicidade, idempotência, reabertura, quedas |
 | Conversas | Estados, limite de mensagens, transferência, concorrência entre analistas (`apps/web/test`) |
+| Limites de uso | Janela por minuto, cota diária com virada de dia e reinício, troca para o modo básico |
 | Modo básico | Respostas contra o service desk real (sem rede), inclusive com o sistema fora do ar |
 | Agent com IA | Modelo **simulado** com roteiro (Mastra, ferramentas e service desk reais): fluxo da Tela 2, duplicidade, privacidade, baixa confiança, caso crítico, confirmação por texto, Gemini → Groq → modo básico |
 | IA real | `npm run agent:smoke`: cenários do PRD contra o Gemini e o Groq, com as decisões impressas |
@@ -180,6 +188,7 @@ Cabeçalhos: `x-api-key` (chave do serviço), `x-actor-id` (funcionário da sess
 - **Senha não é verificada** (pedido do desafio). O login confere só se o e-mail existe no diretório.
 - **Histórico no nosso banco, não na memória do Mastra.** Uma única fonte de verdade para o chat, o console e o agent, com controle do que vai para o modelo.
 - **Streaming das ações, não do texto.** As ações do agent aparecem em tempo real enquanto ele trabalha; o texto final chega inteiro, porque vem da ferramenta `responder` (que também carrega a decisão). Isso evita um passo extra de IA só para registrar a decisão.
+- **Limite por minuto em memória.** Basta para um processo; com várias instâncias, iria para o Redis. A cota diária já fica no banco.
 - **Similaridade por termos para duplicidade.** Paráfrases muito diferentes podem escapar; o agent também consulta os chamados abertos antes de abrir.
 
 ## Uso de IA

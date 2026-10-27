@@ -285,6 +285,28 @@ describe('plano B', () => {
     ]);
   });
 
+  it('se o modelo escreve a resposta como JSON no texto (gpt-oss no Groq), a decisão é recuperada', async () => {
+    const json = JSON.stringify({
+      confianca: 0.99,
+      entendimento: 'Quer saber o status de um chamado sem informar o número.',
+      intencao: 'consultar_chamado',
+      mensagem: 'Você tem três chamados abertos. Qual deles quer consultar?',
+      mostrar_artigo: null,
+      mostrar_chamados: ['INC-20298', 'REQ-10442', 'INC-20311'],
+      motivo: 'Sem número, listo os chamados e peço para escolher.',
+      opcoes: null,
+    });
+    const { service } = await setup({
+      primary: [{ tools: [{ name: 'consultar_chamados', args: {} }] }, { text: `Encontrei seus chamados. ${json}` }],
+    });
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Qual o status do meu chamado?');
+    const reply = agentReply(messages);
+    expect(reply.text).toBe('Você tem três chamados abertos. Qual deles quer consultar?');
+    expect(reply.trace).toMatchObject({ intent: 'consultar_chamado', confidence: 0.99 });
+    expect(block(reply, 'ticket_list')!.tickets).toHaveLength(3);
+    expect(labels(reply)).toContain('leu a decisão escrita no texto');
+  });
+
   it('se o modelo responde em texto livre (sem a ferramenta responder), a resposta é aproveitada', async () => {
     const { service } = await setup({ primary: [{ text: 'Olá! Como posso ajudar?' }] });
     const { messages } = await service.sendEmployeeMessage(ANA, 'oi');

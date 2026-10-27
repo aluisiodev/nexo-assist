@@ -1,4 +1,6 @@
+import type { AiBudget } from '../limits/ai-budget';
 import { BasicResponder } from './basic-responder';
+import { BudgetedResponder } from './budgeted-responder';
 import { FallbackResponder } from './fallback-responder';
 import { LlmResponder } from './llm/llm-responder';
 import type { TurnDeps } from './llm/turn';
@@ -25,6 +27,7 @@ export interface ResponderConfig {
 export function buildResponder(
   config: ResponderConfig,
   deps: TurnDeps,
+  budget?: AiBudget,
 ): { responder: AgentResponder; chain: string[] } {
   const basic = new BasicResponder(deps.serviceDesk);
   const make = (p: LlmProvider): AgentResponder | null => {
@@ -32,7 +35,15 @@ export function buildResponder(
       return new LlmResponder({ name: `Gemini (${config.googleModel})`, model: `google/${config.googleModel}`, deps });
     }
     if (p === 'groq' && config.hasGroqKey) {
-      return new LlmResponder({ name: `Groq (${config.groqModel})`, model: `groq/${config.groqModel}`, deps });
+      // No Groq, 'required' faz o provedor recusar respostas em texto (erro 400).
+      return new LlmResponder({
+        name: `Groq (${config.groqModel})`,
+        model: `groq/${config.groqModel}`,
+        deps,
+        toolChoice: 'auto',
+        // Modelos gpt-oss "pensam" antes de responder; esforço baixo = mais rápido e barato.
+        ...(config.groqModel.includes('gpt-oss') ? { providerOptions: { groq: { reasoningEffort: 'low' } } } : {}),
+      });
     }
     return null;
   };
@@ -43,5 +54,7 @@ export function buildResponder(
   if (ais.length === 0) return { responder: basic, chain: [basic.name] };
 
   const chain = new FallbackResponder([...ais, basic]);
-  return { responder: new RoutedResponder(basic, chain), chain: [...ais.map((a) => a.name), basic.name] };
+  // A cota só conta respostas que passam pela IA; atalhos por regras não gastam nada.
+  const ai = budget && budget.dailyLimit > 0 ? new BudgetedResponder(chain, basic, budget) : chain;
+  return { responder: new RoutedResponder(basic, ai), chain: [...ais.map((a) => a.name), basic.name] };
 }

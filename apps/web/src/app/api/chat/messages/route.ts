@@ -1,6 +1,6 @@
 import { SendMessageInputSchema, type ChatStreamEvent } from '@/lib/chat';
 import { container } from '@/server/container';
-import { describeError, readJson, withUser } from '@/server/http';
+import { apiError, describeError, readJson, withUser } from '@/server/http';
 
 /**
  * POST /api/chat/messages: envia uma mensagem do funcionário e devolve, em tempo real
@@ -9,7 +9,18 @@ import { describeError, readJson, withUser } from '@/server/http';
  */
 export const POST = withUser('employee', async (user, req) => {
   const { text } = SendMessageInputSchema.parse(await readJson(req));
-  const { conversations } = await container();
+  const { conversations, chatRateLimit } = await container();
+
+  const limit = chatRateLimit.hit(user.employeeId);
+  if (!limit.ok) {
+    const res = apiError(
+      429,
+      'rate_limited',
+      `Você enviou muitas mensagens seguidas. Aguarde ${limit.retryAfterSec} segundos e tente de novo.`,
+    );
+    res.headers.set('retry-after', String(limit.retryAfterSec));
+    return res;
+  }
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({

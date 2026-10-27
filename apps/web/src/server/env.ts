@@ -18,6 +18,10 @@ const EnvSchema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: opt(z.string().optional()),
   GOOGLE_API_KEY: opt(z.string().optional()),
   GROQ_API_KEY: opt(z.string().optional()),
+
+  // Limites de uso (0 desliga). Por minuto: por funcionário. Diário: respostas com IA no app todo.
+  CHAT_RATE_LIMIT_PER_MINUTE: opt(z.coerce.number().int().min(0).default(10)),
+  AI_DAILY_CALL_LIMIT: opt(z.coerce.number().int().min(0).default(300)),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
