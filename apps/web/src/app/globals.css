@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+/*
+ * Tokens do protótipo (nexo.pen). Nomes iguais aos do Pencil para facilitar a
+ * comparação: bg-ink, text-ink-3, border-rule, bg-cta, font-display…
+ */
+@theme {
+  --color-paper: #ffffff;
+  --color-desk: #f6f7f9;
+  --color-ink: #1b2431;
+  --color-ink-2: #3d4656;
+  --color-ink-3: #5b6472;
+  --color-rule: #e6e8ec;
+  --color-cta: #0062c4;
+  --color-cta-hover: #00539f;
+
+  --color-primary: #0285f7;
+  --color-primary-soft: #0285f712;
+  --color-primary-text: #0069c7;
+  --color-success: #00bd6c;
+  --color-success-soft: #00bd6c14;
+  --color-success-text: #00804a;
+  --color-warning: #f5a500;
+  --color-warning-soft: #f5a50018;
+  --color-warning-text: #946300;
+  --color-danger: #ee343b;
+  --color-danger-soft: #ee343b12;
+  --color-danger-text: #c4161d;
+  --color-violet: #a37aff;
+  --color-violet-soft: #a37aff16;
+  --color-violet-text: #6b3fe0;
+
+  --font-display: 'Newsreader Variable', Georgia, serif;
+  --font-ui: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px #1b24310d, 0 6px 18px #1b24310a;
+  --shadow-field: 0 1px 2px #1b24310a;
+  --shadow-cta: 0 1px 2px #0062c433, 0 6px 16px #0062c426;
+}
+
+/* Estilos base dentro da camada "base", para que as classes utilitárias possam sobrescrever. */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-cta);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
