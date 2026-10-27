@@ -1,0 +1,17 @@
+{
+  "name": "@nexo/service-desk-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cliente tipado do service desk, com timeout, retry com backoff e idempotência para o sistema legado instável.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nexo/domain": "*",
+    "zod": "^4.6.7"
+  }
+}
