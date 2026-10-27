@@ -5,8 +5,8 @@ Agent de atendimento do service desk de TI da Nexo. O funcionário descreve o pr
 > **Status:** em construção.
 >
 > - ✅ Serviço de chamados simulado, regras do service desk e cliente com retry
-> - ✅ App web: login, chat do funcionário, estados da conversa, transferência, modo básico (sem IA)
-> - ⏳ Agent com IA (Mastra + Gemini, com Groq como plano B)
+> - ✅ App web: login, chat do funcionário, estados da conversa, transferência
+> - ✅ Agent com IA (Mastra + Gemini, com Groq como plano B e modo básico sem IA como reserva final)
 > - ⏳ Console do analista (Telas 4 e 5)
 
 ## Como rodar
@@ -33,7 +33,8 @@ Os bancos SQLite são criados na primeira execução e **sobrevivem a reinícios
 |---|---|
 | `npm run dev` | Service desk + app em modo desenvolvimento |
 | `npm run build` e `npm start` | Build de produção do app e execução dos dois serviços |
-| `npm test` | Todos os testes (Vitest) |
+| `npm test` | Todos os testes (Vitest), sem rede e sem chave de IA |
+| `npm run agent:smoke` | Conversa com o Gemini e o Groq de verdade (usa as chaves do `.env`) e mostra as decisões |
 | `npm run typecheck` | Checagem de tipos estrita em todos os pacotes |
 | `npm run format` | Formata o código (Prettier) |
 | `npm run db:reset` | Recria o banco do service desk com os dados de exemplo |
@@ -45,7 +46,8 @@ apps/
   web/                  Next.js: login, chat do funcionário, (console do analista), rotas /api.
     src/server/         Tudo que roda só no servidor:
       conversations/      estado e mensagens das conversas (banco do app)
-      agent/              quem responde: modo básico hoje, agent com IA na próxima etapa
+      agent/              quem responde: agent Mastra (llm/), plano B e modo básico (regras)
+      drafts/             rascunhos de chamado aguardando confirmação
       auth/               sessões
 packages/
   domain/               Regras puras e testadas: prazos em horas úteis, prioridade,
@@ -77,17 +79,55 @@ qualquer estado aberto ──encerrar──▶ encerrada
 - **Limite de 30 mensagens** do funcionário por sessão. "Nova conversa" encerra a atual e começa outra.
 - Ao voltar outro dia, o funcionário continua a conversa que estava aberta.
 
-### Quem responde: agent com IA, plano B e modo básico
+### Como o agent decide o que fazer
 
-O chat fala com uma interface (`AgentResponder`), não com um modelo específico. A ordem planejada é:
+O agent é um `Agent` do **Mastra** com 7 ferramentas. O modelo escolhe quais usar; as ferramentas aplicam as regras do Anexo A em código:
 
-1. **Gemini** (Google, plano gratuito), o provedor principal;
-2. **Groq** (plano gratuito), se o principal falhar ou estourar a cota;
-3. **Modo básico** (regras, sem IA), se nenhum provedor estiver disponível.
+| Ferramenta | O que faz | Regra aplicada no código |
+|---|---|---|
+| `consultar_chamados` / `consultar_chamado` | Chamados do funcionário, com prazo | Privacidade: o id vem da sessão; chamado alheio = "não encontrado" |
+| `buscar_central_ajuda` | Artigos relevantes | — |
+| `preparar_rascunho_chamado` | Monta o **rascunho** de um chamado novo | Prioridade e prazo calculados pelo código a partir de fatos (impacto, impede o trabalho, alternativa, compromisso hoje); **recusa duplicado** de chamado aberto e sugere reabrir resolvido ≤ 7 dias |
+| `preparar_atualizacao_chamado` | Rascunho para complementar ou reabrir | Só complementa aberto; só reabre resolvido há até 7 dias |
+| `transferir_para_analista` | Transfere com resumo do caso | Grupo N2 para crítico/vencido, N1 para o resto |
+| `responder` | Resposta final + registro da decisão | Cards montados só com dados que as ferramentas devolveram |
 
-O modo básico já funciona: consulta e mostra chamados com o prazo calculado, busca na central de ajuda, complementa chamados ("INC-20311: nova informação"), redireciona assuntos fora de TI e transfere para um analista com resumo do caso. Ele **não abre chamados** por conversa: sem IA, não dá para classificar com segurança, então encaminha a um analista.
+Fluxo de uma mensagem:
 
-Se quem responde falhar, o chat não quebra: o funcionário recebe uma resposta honesta com a opção de falar com um analista.
+```
+mensagem ─▶ atalhos sem IA? ──sim──▶ regras (pedido de analista, "sim, pode abrir", seleção de chamado)
+                 │não
+                 ▼
+         Gemini ──falhou──▶ Groq ──falhou──▶ modo básico (regras)
+                 │
+                 ▼
+   ferramentas (regras do Anexo A) ─▶ responder ─▶ regras pós-resposta ─▶ chat
+```
+
+**O agent nunca cria nem altera um chamado.** Ele só monta rascunhos; quem grava no service desk é o código, quando o funcionário clica em **Confirmar** (ou responde "sim, pode abrir"), usando o número do rascunho como chave de idempotência: clique duplo ou retry após queda nunca duplica.
+
+Regras aplicadas depois da resposta, mesmo que o modelo esqueça:
+
+- chamado mostrado com **prazo vencido** → oferece "Falar com um analista";
+- **confiança abaixo de 35%** sem outra ação → transfere para um analista (motivo "agent sem segurança");
+- chamado **crítico** confirmado → transfere direto para o N2.
+
+### Plano B e modo básico
+
+`LLM_PROVIDER` e `LLM_FALLBACK_PROVIDER` no `.env` definem a ordem (padrão: Gemini → Groq). Se um provedor falha (cota, fora do ar, chave inválida, tempo esgotado), o próximo assume e a troca aparece no "por quê?". Sem nenhuma chave, ou com os dois fora do ar, responde o **modo básico**: regras que consultam chamados, mostram prazos, buscam na central de ajuda, complementam chamados e transferem para um analista. Ele não abre chamados (sem IA, não dá para classificar com segurança).
+
+### Escolha do modelo
+
+- **Gemini Flash-Lite (Google) como principal:** plano gratuito, bom em chamada de ferramentas e rápido. Para um desafio, não há motivo para um plano pago.
+- **Groq (`openai/gpt-oss-120b`) como reserva:** também gratuito, muito rápido e de outro fornecedor, então uma queda ou cota esgotada no Google não derruba o atendimento.
+- Os dois são trocáveis no `.env` sem mexer no código.
+
+### Custo por conversa
+
+- **Atalhos sem IA** para o que é inequívoco: pedir analista, confirmar/cancelar rascunho, escolher um chamado da lista e complementar no formato "INC-123: texto".
+- **Contexto curto:** instruções enxutas (as regras estão no código), as últimas 14 mensagens e respostas de ferramentas compactas.
+- **Limites:** até 8 passos por resposta, temperatura baixa, teto de tokens e tempo máximo por resposta.
+- **Tokens registrados** em cada resposta (visíveis no registro), para acompanhar o custo.
 
 ### Visibilidade das decisões
 
@@ -127,6 +167,8 @@ Cabeçalhos: `x-api-key` (chave do serviço), `x-actor-id` (funcionário da sess
 | Service desk | Testes da API real com banco temporário: privacidade, duplicidade, idempotência, reabertura, quedas |
 | Conversas | Estados, limite de mensagens, transferência, concorrência entre analistas (`apps/web/test`) |
 | Modo básico | Respostas contra o service desk real (sem rede), inclusive com o sistema fora do ar |
+| Agent com IA | Modelo **simulado** com roteiro (Mastra, ferramentas e service desk reais): fluxo da Tela 2, duplicidade, privacidade, baixa confiança, caso crítico, confirmação por texto, Gemini → Groq → modo básico |
+| IA real | `npm run agent:smoke`: cenários do PRD contra o Gemini e o Groq, com as decisões impressas |
 | Interface | Navegação real no navegador (login, consulta, "por quê?", transferência, celular) durante o desenvolvimento |
 
 ## Trade-offs (até aqui)
@@ -135,6 +177,9 @@ Cabeçalhos: `x-api-key` (chave do serviço), `x-actor-id` (funcionário da sess
 - **Feriados não entram no cálculo de horas úteis.** Seria uma tabela de feriados no calendário.
 - **Busca por sobreposição de termos**, não embeddings. Para 9 artigos resolve, é instantânea e não custa nada.
 - **Senha não é verificada** (pedido do desafio). O login confere só se o e-mail existe no diretório.
+- **Histórico no nosso banco, não na memória do Mastra.** Uma única fonte de verdade para o chat, o console e o agent, com controle do que vai para o modelo.
+- **Streaming das ações, não do texto.** As ações do agent aparecem em tempo real enquanto ele trabalha; o texto final chega inteiro, porque vem da ferramenta `responder` (que também carrega a decisão). Isso evita um passo extra de IA só para registrar a decisão.
+- **Similaridade por termos para duplicidade.** Paráfrases muito diferentes podem escapar; o agent também consulta os chamados abertos antes de abrir.
 
 ## Uso de IA
 
