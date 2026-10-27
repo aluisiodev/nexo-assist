@@ -57,4 +57,20 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (conversation_id, seq);
+
+-- Rascunhos de chamado/atualização aguardando confirmação do funcionário.
+CREATE TABLE IF NOT EXISTS ticket_drafts (
+  seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+  id              TEXT UNIQUE,              -- "D-381"
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  employee_id     TEXT NOT NULL,
+  message_id      TEXT,                     -- mensagem do agent que mostra o rascunho
+  kind            TEXT NOT NULL CHECK (kind IN ('create', 'comment', 'reopen')),
+  data            TEXT NOT NULL,            -- JSON
+  status          TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'cancelled', 'superseded')),
+  ticket_id       TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drafts_conversation ON ticket_drafts (conversation_id, status);
 `;

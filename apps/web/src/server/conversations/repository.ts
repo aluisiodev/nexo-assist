@@ -223,6 +223,27 @@ export class ConversationRepository {
     return rs.rows.map(toMessage);
   }
 
+  /** Últimas `limit` mensagens, em ordem cronológica (contexto enviado à IA). */
+  async listRecentMessages(conversationId: string, limit: number): Promise<ChatMessage[]> {
+    const rs = await this.db.execute({
+      sql: 'SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq',
+      args: [conversationId, limit],
+    });
+    return rs.rows.map(toMessage);
+  }
+
+  async findMessage(id: string): Promise<ChatMessage | null> {
+    const rs = await this.db.execute({ sql: 'SELECT * FROM messages WHERE id = ?', args: [id] });
+    const row = rs.rows[0];
+    return row ? toMessage(row) : null;
+  }
+
+  /** Atualiza os blocos de uma mensagem (ex.: rascunho que passou a "confirmado"). */
+  async replaceBlocks(id: string, blocks: readonly MessageBlock[]): Promise<ChatMessage | null> {
+    await this.db.execute({ sql: 'UPDATE messages SET blocks = ? WHERE id = ?', args: [JSON.stringify(blocks), id] });
+    return this.findMessage(id);
+  }
+
   /**
    * Aplica uma mudança de estado só se ninguém mudou a conversa desde que ela foi lida
    * (controle otimista por `version`). Devolve null em caso de conflito.
