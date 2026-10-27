@@ -5,7 +5,10 @@ import { createApp, openDatabase, seed } from '@nexo/service-desk';
 import { createServiceDeskClient } from '@nexo/service-desk-client';
 import type { ServiceDeskAccess } from '@/server/agent/types';
 import type { SessionUser } from '@/server/auth/sessions';
+import type { Client } from '@libsql/client';
 import { ConversationRepository } from '@/server/conversations/repository';
+import { DraftRepository } from '@/server/drafts/repository';
+import { DraftService } from '@/server/drafts/service';
 import { openAppDatabase } from '@/server/db/open';
 
 export const NOW = new Date('2026-10-27T10:00:00-03:00');
@@ -31,9 +34,21 @@ export const JULIANA: SessionUser = { ...RAFAEL, employeeId: 'ana-juliana', name
 
 const tempUrl = (name: string) => `file:${join(mkdtempSync(join(tmpdir(), 'nexo-web-')), name)}`;
 
+const databases = new WeakMap<ConversationRepository, Client>();
+
 /** Banco do app vazio, num arquivo temporário. */
 export async function createConversationRepo(): Promise<ConversationRepository> {
-  return new ConversationRepository(await openAppDatabase(tempUrl('app.db')));
+  const db = await openAppDatabase(tempUrl('app.db'));
+  const repo = new ConversationRepository(db);
+  databases.set(repo, db);
+  return repo;
+}
+
+/** Serviço de rascunhos no mesmo banco do repositório de conversas. */
+export function draftsFor(repo: ConversationRepository): DraftService {
+  const db = databases.get(repo);
+  if (!db) throw new Error('Repositório sem banco de teste');
+  return new DraftService(new DraftRepository(db), repo);
 }
 
 /** Service desk real (em memória do processo, sem rede) com os dados de exemplo. */

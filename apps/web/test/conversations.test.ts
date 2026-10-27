@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { AgentContext, AgentReply, AgentResponder } from '@/server/agent/types';
 import type { ConversationRepository } from '@/server/conversations/repository';
 import { ConversationService } from '@/server/conversations/service';
-import { ANA, createConversationRepo, createServiceDesk, JULIANA, NOW, RAFAEL } from './helpers';
+import { ANA, createConversationRepo, createServiceDesk, draftsFor, JULIANA, NOW, RAFAEL } from './helpers';
 
 /** Responder de teste: devolve o que mandarmos e registra as chamadas. */
 class FakeResponder implements AgentResponder {
@@ -24,7 +24,14 @@ beforeEach(async () => {
   repo = await createConversationRepo();
   responder = new FakeResponder();
   const sd = await createServiceDesk();
-  service = new ConversationService({ repo, responder, serviceDesk: sd.access, clock: () => NOW, log: () => {} });
+  service = new ConversationService({
+    repo,
+    responder,
+    serviceDesk: sd.access,
+    drafts: draftsFor(repo),
+    clock: () => NOW,
+    log: () => {},
+  });
 });
 
 describe('conversa do funcionário', () => {
@@ -96,7 +103,14 @@ describe('transferência e atendimento pelo analista', () => {
 
   it('também transfere o chamado no service desk', async () => {
     const sd = await createServiceDesk();
-    service = new ConversationService({ repo, responder, serviceDesk: sd.access, clock: () => NOW, log: () => {} });
+    service = new ConversationService({
+      repo,
+      responder,
+      serviceDesk: sd.access,
+      drafts: draftsFor(repo),
+      clock: () => NOW,
+      log: () => {},
+    });
     responder.next = handoffReply;
     await service.sendEmployeeMessage(ANA, 'Quero falar com um analista');
     const ticket = await sd.client.forActor('emp-ana').getTicket('INC-20311');
