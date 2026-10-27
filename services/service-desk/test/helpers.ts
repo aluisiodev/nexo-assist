@@ -17,7 +17,10 @@ export interface TestServer {
   readonly db: Client;
   readonly app: ReturnType<typeof createApp>;
   /** Faz uma requisição já com a chave de API e, se informado, o funcionário. */
-  call(path: string, init?: { method?: string; actor?: string; body?: unknown; headers?: Record<string, string> }): Promise<Response>;
+  call(
+    path: string,
+    init?: { method?: string; actor?: string; body?: unknown; headers?: Record<string, string> },
+  ): Promise<Response>;
 }
 
 export async function createTestServer(opts: { chaos?: ChaosOptions; now?: Date } = {}): Promise<TestServer> {

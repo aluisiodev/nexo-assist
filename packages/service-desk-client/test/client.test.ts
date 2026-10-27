@@ -50,12 +50,21 @@ describe('createServiceDeskClient', () => {
 
   it('erro de negócio não é repetido e preserva o código do serviço', async () => {
     const { fn, calls } = fakeFetch([
-      jsonResponse(409, { error: { code: 'possible_duplicate', message: 'Já existe o INC-1', details: { ticketId: 'INC-1' } } }),
+      jsonResponse(409, {
+        error: { code: 'possible_duplicate', message: 'Já existe o INC-1', details: { ticketId: 'INC-1' } },
+      }),
     ]);
     const err = await make(fn)
       .forActor('emp-ana')
       .createTicket(
-        { type: 'INC', category: 'outros', title: 'Teste de título', description: 'Descrição longa o bastante', priority: 'baixa', impact: 'individual' },
+        {
+          type: 'INC',
+          category: 'outros',
+          title: 'Teste de título',
+          description: 'Descrição longa o bastante',
+          priority: 'baixa',
+          impact: 'individual',
+        },
         'k-1',
       )
       .catch((e: unknown) => e);
@@ -65,26 +74,51 @@ describe('createServiceDeskClient', () => {
 
   it('POST com chave de idempotência repete em 503 e reenvia a mesma chave', async () => {
     const ticket = {
-      id: 'INC-1', type: 'INC', category: 'outros', title: 'Teste de título', description: 'Descrição longa o bastante',
-      priority: 'baixa', priorityReason: null, impact: 'individual', status: 'aguardando_analista', requesterId: 'emp-ana',
-      assignedGroup: 'N1', assigneeId: null, source: 'agent', createdAt: '2026-10-27T13:00:00.000Z',
-      updatedAt: '2026-10-27T13:00:00.000Z', slaReferenceAt: '2026-10-27T13:00:00.000Z', resolvedAt: null,
-      sla: { dueAt: null, overdue: false, target: '5 dias úteis', paused: false }, canReopen: false,
+      id: 'INC-1',
+      type: 'INC',
+      category: 'outros',
+      title: 'Teste de título',
+      description: 'Descrição longa o bastante',
+      priority: 'baixa',
+      priorityReason: null,
+      impact: 'individual',
+      status: 'aguardando_analista',
+      requesterId: 'emp-ana',
+      assignedGroup: 'N1',
+      assigneeId: null,
+      source: 'agent',
+      createdAt: '2026-10-27T13:00:00.000Z',
+      updatedAt: '2026-10-27T13:00:00.000Z',
+      slaReferenceAt: '2026-10-27T13:00:00.000Z',
+      resolvedAt: null,
+      sla: { dueAt: null, overdue: false, target: '5 dias úteis', paused: false },
+      canReopen: false,
     };
     const { fn, calls } = fakeFetch([jsonResponse(503, {}), jsonResponse(201, { ticket })]);
-    const created = await make(fn)
-      .forActor('emp-ana')
-      .createTicket(
-        { type: 'INC', category: 'outros', title: 'Teste de título', description: 'Descrição longa o bastante', priority: 'baixa', impact: 'individual' },
-        'draft-1',
-      );
+    const created = await make(fn).forActor('emp-ana').createTicket(
+      {
+        type: 'INC',
+        category: 'outros',
+        title: 'Teste de título',
+        description: 'Descrição longa o bastante',
+        priority: 'baixa',
+        impact: 'individual',
+      },
+      'draft-1',
+    );
     expect(created.id).toBe('INC-1');
-    expect(calls.map((c) => (c.init?.headers as Record<string, string>)['idempotency-key'])).toEqual(['draft-1', 'draft-1']);
+    expect(calls.map((c) => (c.init?.headers as Record<string, string>)['idempotency-key'])).toEqual([
+      'draft-1',
+      'draft-1',
+    ]);
   });
 
   it('valida o contrato da resposta', async () => {
     const { fn } = fakeFetch([jsonResponse(200, { tickets: [{ id: 'X' }] })]);
-    const err = await make(fn).forActor('emp-ana').listTickets().catch((e: unknown) => e);
+    const err = await make(fn)
+      .forActor('emp-ana')
+      .listTickets()
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ServiceDeskError);
     expect(err).toMatchObject({ kind: 'invalid_response' });
   });
@@ -92,7 +126,10 @@ describe('createServiceDeskClient', () => {
   it('timeout vira "unavailable" depois das tentativas', async () => {
     const timeout = Object.assign(new Error('timeout'), { name: 'TimeoutError' });
     const { fn, calls } = fakeFetch([timeout, timeout, timeout, timeout]);
-    const err = await make(fn).forActor('emp-ana').listTickets().catch((e: unknown) => e);
+    const err = await make(fn)
+      .forActor('emp-ana')
+      .listTickets()
+      .catch((e: unknown) => e);
     expect(err).toMatchObject({ kind: 'unavailable' });
     expect((err as Error).message).toContain('timeout');
     expect(calls).toHaveLength(4);

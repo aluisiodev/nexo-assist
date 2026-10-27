@@ -118,8 +118,13 @@ export async function createTicket(ctx: UseCaseContext, input: CreateTicketComma
   if (!requester) throw notFound(`Funcionário ${requesterId} não encontrado.`);
 
   if (!input.confirmedNotDuplicate) {
-    const duplicates = (await findSimilarTickets(ctx, { text: `${input.title} ${input.description}`, category: input.category, requesterId }))
-      .filter((m) => m.reason === 'open_duplicate' && m.score >= DUPLICATE_BLOCK_THRESHOLD);
+    const duplicates = (
+      await findSimilarTickets(ctx, {
+        text: `${input.title} ${input.description}`,
+        category: input.category,
+        requesterId,
+      })
+    ).filter((m) => m.reason === 'open_duplicate' && m.score >= DUPLICATE_BLOCK_THRESHOLD);
     const best = duplicates[0];
     if (best) {
       throw conflict(
@@ -194,7 +199,10 @@ export async function reopenTicket(ctx: UseCaseContext, id: string, input: Reope
     throw conflict('not_resolved', `O chamado ${ticket.id} não está resolvido, então não precisa ser reaberto.`);
   }
   if (!canReopen(ticket, ctx.now)) {
-    throw conflict('reopen_window_expired', `O chamado ${ticket.id} foi resolvido há mais de 7 dias. Abra um novo chamado.`);
+    throw conflict(
+      'reopen_window_expired',
+      `O chamado ${ticket.id} foi resolvido há mais de 7 dias. Abra um novo chamado.`,
+    );
   }
   const at = ctx.now.toISOString();
   const updated = await ctx.repos.tickets.update(
@@ -227,7 +235,11 @@ export async function transferTicket(ctx: UseCaseContext, id: string, input: Tra
 }
 
 /** Mudança de status feita por analista (assumir, pedir informação, resolver…). */
-export async function changeTicketStatus(ctx: UseCaseContext, id: string, input: ChangeStatusInput): Promise<TicketView> {
+export async function changeTicketStatus(
+  ctx: UseCaseContext,
+  id: string,
+  input: ChangeStatusInput,
+): Promise<TicketView> {
   if (!isAnalyst(ctx.actor)) throw forbidden('Apenas analistas podem mudar o status de um chamado.');
   const ticket = await loadVisible(ctx, id);
   if (ticket.status === input.status) return view(ctx, ticket);
@@ -241,7 +253,11 @@ export async function changeTicketStatus(ctx: UseCaseContext, id: string, input:
   const updated = await ctx.repos.tickets.update(
     ticket.id,
     changes,
-    { kind: 'status_changed', body: input.note ?? `Status: ${ticket.status} → ${input.status}`, actor: eventActor(ctx.actor) },
+    {
+      kind: 'status_changed',
+      body: input.note ?? `Status: ${ticket.status} → ${input.status}`,
+      actor: eventActor(ctx.actor),
+    },
     at,
   );
   return view(ctx, updated);

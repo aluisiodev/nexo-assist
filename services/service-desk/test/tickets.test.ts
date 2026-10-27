@@ -46,7 +46,12 @@ describe('privacidade: chamados de um funcionário nunca aparecem para outro', (
   it('funcionário não comenta nem transfere chamado alheio', async () => {
     expect((await s.call('/tickets/INC-20330/comments', { actor: ANA, body: { body: 'oi' } })).status).toBe(404);
     expect(
-      (await s.call('/tickets/INC-20330/transfer', { actor: ANA, body: { group: 'N2', summary: 'resumo qualquer aqui' } })).status,
+      (
+        await s.call('/tickets/INC-20330/transfer', {
+          actor: ANA,
+          body: { group: 'N2', summary: 'resumo qualquer aqui' },
+        })
+      ).status,
     ).toBe(404);
   });
 
@@ -106,7 +111,14 @@ describe('abertura de chamado', () => {
   it('numera requisições separadamente', async () => {
     const res = await s.call('/tickets', {
       actor: ANA,
-      body: { ...vpnTicket, type: 'REQ', category: 'software', title: 'Instalar o Power BI Desktop', description: 'Preciso do Power BI Desktop para os relatórios do fechamento.', priority: 'baixa' },
+      body: {
+        ...vpnTicket,
+        type: 'REQ',
+        category: 'software',
+        title: 'Instalar o Power BI Desktop',
+        description: 'Preciso do Power BI Desktop para os relatórios do fechamento.',
+        priority: 'baixa',
+      },
     });
     expect((await json(res)).ticket.id).toBe('REQ-10461');
   });
@@ -134,7 +146,10 @@ describe('abertura de chamado', () => {
     };
     const blocked = await s.call('/tickets', { actor: ANA, body: dup });
     expect(blocked.status).toBe(409);
-    expect((await json(blocked)).error).toMatchObject({ code: 'possible_duplicate', details: { ticketId: 'INC-20311' } });
+    expect((await json(blocked)).error).toMatchObject({
+      code: 'possible_duplicate',
+      details: { ticketId: 'INC-20311' },
+    });
 
     const allowed = await s.call('/tickets', { actor: ANA, body: { ...dup, confirmedNotDuplicate: true } });
     expect(allowed.status).toBe(201);
@@ -173,14 +188,19 @@ describe('idempotência (retry seguro depois de queda)', () => {
 
 describe('atualização, reabertura e transferência', () => {
   it('complementa um chamado aberto', async () => {
-    const res = await s.call('/tickets/INC-20311/comments', { actor: ANA, body: { body: 'Agora também trava ao abrir o Excel.' } });
+    const res = await s.call('/tickets/INC-20311/comments', {
+      actor: ANA,
+      body: { body: 'Agora também trava ao abrir o Excel.' },
+    });
     expect(res.status).toBe(200);
     const { events } = await json(await s.call('/tickets/INC-20311/events', { actor: ANA }));
     expect(events.at(-1)).toMatchObject({ kind: 'comment', body: 'Agora também trava ao abrir o Excel.' });
   });
 
   it('resposta do funcionário devolve o chamado à fila e reinicia o prazo', async () => {
-    const { ticket } = await json(await s.call('/tickets/INC-20325/comments', { actor: DIEGO, body: { body: 'Windows 11, print em anexo.' } }));
+    const { ticket } = await json(
+      await s.call('/tickets/INC-20325/comments', { actor: DIEGO, body: { body: 'Windows 11, print em anexo.' } }),
+    );
     expect(ticket.status).toBe('aguardando_analista');
     expect(ticket.sla.paused).toBe(false);
   });
@@ -206,7 +226,9 @@ describe('atualização, reabertura e transferência', () => {
 
   it('transfere para um grupo levando o resumo', async () => {
     const summary = 'Chamado vencido há 3 dias úteis; funcionária pediu para falar com analista.';
-    const { ticket } = await json(await s.call('/tickets/INC-20311/transfer', { actor: ANA, body: { group: 'N2', summary } }));
+    const { ticket } = await json(
+      await s.call('/tickets/INC-20311/transfer', { actor: ANA, body: { group: 'N2', summary } }),
+    );
     expect(ticket.assignedGroup).toBe('N2');
     const { events } = await json(await s.call('/tickets/INC-20311/events', { actor: ANA }));
     expect(events.at(-1)).toMatchObject({ kind: 'transferred' });
@@ -216,11 +238,15 @@ describe('atualização, reabertura e transferência', () => {
   it('só analista muda status; assumir registra o responsável e resolver permite reabrir', async () => {
     expect((await s.call('/tickets/INC-20311/status', { actor: ANA, body: { status: 'resolvido' } })).status).toBe(403);
 
-    const taken = await json(await s.call('/tickets/INC-20311/status', { actor: RAFAEL, body: { status: 'em_andamento' } }));
+    const taken = await json(
+      await s.call('/tickets/INC-20311/status', { actor: RAFAEL, body: { status: 'em_andamento' } }),
+    );
     expect(taken.ticket).toMatchObject({ status: 'em_andamento', assigneeId: RAFAEL });
     expect(taken.ticket.sla.overdue).toBe(false);
 
-    const resolved = await json(await s.call('/tickets/INC-20311/status', { actor: RAFAEL, body: { status: 'resolvido' } }));
+    const resolved = await json(
+      await s.call('/tickets/INC-20311/status', { actor: RAFAEL, body: { status: 'resolvido' } }),
+    );
     expect(resolved.ticket.canReopen).toBe(true);
   });
 });

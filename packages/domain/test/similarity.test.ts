@@ -7,7 +7,13 @@ describe('similarity', () => {
   });
 
   it('remove palavras vazias e mantém números', () => {
-    expect(tokenize('Meu notebook não conecta na VPN, erro 809')).toEqual(['notebook', 'conecta', 'vpn', 'erro', '809']);
+    expect(tokenize('Meu notebook não conecta na VPN, erro 809')).toEqual([
+      'notebook',
+      'conecta',
+      'vpn',
+      'erro',
+      '809',
+    ]);
   });
 
   it('aproxima a mensagem do funcionário de um chamado sobre o mesmo problema', () => {

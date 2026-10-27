@@ -24,7 +24,8 @@ async function main(): Promise<void> {
         ? `[service-desk] instabilidade simulada: ${Math.round(failureRate * 100)}% de chance de queda de ${outageMs} ms`
         : '[service-desk] instabilidade simulada desligada',
     );
-    if (config.usingDevApiKey) console.warn('[service-desk] usando a chave de API de desenvolvimento (defina SERVICE_DESK_API_KEY)');
+    if (config.usingDevApiKey)
+      console.warn('[service-desk] usando a chave de API de desenvolvimento (defina SERVICE_DESK_API_KEY)');
   });
 
   const shutdown = () => {

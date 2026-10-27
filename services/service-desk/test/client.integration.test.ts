@@ -30,11 +30,17 @@ describe('cliente tipado + serviço', () => {
 
   it('erros de negócio viram ServiceDeskError com código estável', async () => {
     const { client } = await setup();
-    const err = await client.forActor(ANA).getTicket('INC-20330').catch((e: unknown) => e);
+    const err = await client
+      .forActor(ANA)
+      .getTicket('INC-20330')
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ServiceDeskError);
     expect(err).toMatchObject({ kind: 'not_found', status: 404 });
 
-    const reopen = await client.forActor(ANA).reopenTicket('INC-19877', { reason: 'de novo' }, 'k-1').catch((e: unknown) => e);
+    const reopen = await client
+      .forActor(ANA)
+      .reopenTicket('INC-19877', { reason: 'de novo' }, 'k-1')
+      .catch((e: unknown) => e);
     expect(reopen).toMatchObject({ kind: 'conflict', code: 'reopen_window_expired' });
   });
 
@@ -67,7 +73,10 @@ describe('cliente tipado + serviço', () => {
 
   it('desiste depois do limite e informa que está indisponível', async () => {
     const { client, retries } = await setup({ chaos: { failureRate: 1, outageMs: 60_000, latencyMs: 0 } });
-    const err = await client.forActor(BRUNO).listTickets().catch((e: unknown) => e);
+    const err = await client
+      .forActor(BRUNO)
+      .listTickets()
+      .catch((e: unknown) => e);
     expect(err).toMatchObject({ kind: 'unavailable', status: 503 });
     expect(retries).toHaveLength(3);
   });

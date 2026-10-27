@@ -18,7 +18,12 @@ export class IdempotencyRepository {
     });
     const row = rs.rows[0];
     if (!row) return null;
-    return { method: text(row, 'method'), path: text(row, 'path'), status: integer(row, 'status'), body: text(row, 'body') };
+    return {
+      method: text(row, 'method'),
+      path: text(row, 'path'),
+      status: integer(row, 'status'),
+      body: text(row, 'body'),
+    };
   }
 
   async save(key: string, actorId: string, response: StoredResponse, at: string): Promise<void> {

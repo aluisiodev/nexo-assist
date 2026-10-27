@@ -115,7 +115,8 @@ export function createServiceDeskClient(options: ServiceDeskClientOptions) {
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
-        lastProblem = err instanceof Error && err.name === 'TimeoutError' ? `timeout de ${timeoutMs} ms` : 'falha de rede';
+        lastProblem =
+          err instanceof Error && err.name === 'TimeoutError' ? `timeout de ${timeoutMs} ms` : 'falha de rede';
         if (attempt < attemptsAllowed) {
           const delayMs = backoff(attempt, null);
           options.onRetry?.({ attempt, delayMs, reason: lastProblem, method, path });
@@ -178,7 +179,12 @@ export function createServiceDeskClient(options: ServiceDeskClientOptions) {
         return (await request(TicketEnvelope, 'GET', `/tickets/${enc(id)}`, base)).ticket;
       },
       async getTicketEvents(id: string) {
-        const res = await request(z.object({ events: z.array(TicketEventSchema) }), 'GET', `/tickets/${enc(id)}/events`, base);
+        const res = await request(
+          z.object({ events: z.array(TicketEventSchema) }),
+          'GET',
+          `/tickets/${enc(id)}/events`,
+          base,
+        );
         return res.events;
       },
       async findSimilar(params: { text: string; category?: Category; requesterId?: string }) {
@@ -192,16 +198,32 @@ export function createServiceDeskClient(options: ServiceDeskClientOptions) {
         return (await request(TicketEnvelope, 'POST', '/tickets', { ...base, body: input, idempotencyKey })).ticket;
       },
       async addComment(id: string, input: AddCommentInput, idempotencyKey: string) {
-        return (await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/comments`, { ...base, body: input, idempotencyKey })).ticket;
+        return (
+          await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/comments`, {
+            ...base,
+            body: input,
+            idempotencyKey,
+          })
+        ).ticket;
       },
       async reopenTicket(id: string, input: ReopenTicketInput, idempotencyKey: string) {
-        return (await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/reopen`, { ...base, body: input, idempotencyKey })).ticket;
+        return (
+          await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/reopen`, { ...base, body: input, idempotencyKey })
+        ).ticket;
       },
       async transferTicket(id: string, input: TransferTicketInput, idempotencyKey: string) {
-        return (await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/transfer`, { ...base, body: input, idempotencyKey })).ticket;
+        return (
+          await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/transfer`, {
+            ...base,
+            body: input,
+            idempotencyKey,
+          })
+        ).ticket;
       },
       async changeStatus(id: string, input: ChangeStatusInput, idempotencyKey: string) {
-        return (await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/status`, { ...base, body: input, idempotencyKey })).ticket;
+        return (
+          await request(TicketEnvelope, 'POST', `/tickets/${enc(id)}/status`, { ...base, body: input, idempotencyKey })
+        ).ticket;
       },
       async getEmployee(id: string) {
         return (await request(z.object({ employee: EmployeeSchema }), 'GET', `/employees/${enc(id)}`, base)).employee;
@@ -222,7 +244,8 @@ export function createServiceDeskClient(options: ServiceDeskClientOptions) {
     /** Login: procura o funcionário pelo e-mail corporativo. Devolve null se não existir. */
     async findEmployeeByEmail(email: string) {
       try {
-        return (await request(z.object({ employee: EmployeeSchema }), 'GET', '/employees/lookup', { query: { email } })).employee;
+        return (await request(z.object({ employee: EmployeeSchema }), 'GET', '/employees/lookup', { query: { email } }))
+          .employee;
       } catch (err) {
         if (err instanceof ServiceDeskError && err.kind === 'not_found') return null;
         throw err;

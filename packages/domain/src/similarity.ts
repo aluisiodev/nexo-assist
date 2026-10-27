@@ -8,20 +8,21 @@
  * Embeddings ficam como evolução (ver README).
  */
 
+// prettier-ignore
 const STOPWORDS = new Set([
-  'a', 'o', 'as', 'os', 'um', 'uma', 'uns', 'umas', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na',
-  'nos', 'nas', 'por', 'para', 'pra', 'com', 'sem', 'que', 'e', 'ou', 'se', 'ao', 'aos', 'meu', 'minha',
-  'meus', 'minhas', 'seu', 'sua', 'seus', 'suas', 'esta', 'este', 'isso', 'isto', 'esse', 'essa', 'ele',
-  'ela', 'eu', 'me', 'mim', 'voce', 'nao', 'sim', 'mais', 'muito', 'muita', 'ja', 'tem', 'ter', 'estou',
-  'esta', 'estao', 'foi', 'ser', 'sao', 'como', 'quando', 'desde', 'apos', 'depois', 'ainda', 'tambem',
-  'consigo', 'preciso', 'aparece', 'favor', 'ola', 'oi', 'bom', 'dia', 'tarde', 'noite', 'hoje', 'ontem',
+  'a', 'o', 'as', 'os', 'um', 'uma', 'uns', 'umas', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos',
+  'nas', 'por', 'para', 'pra', 'com', 'sem', 'que', 'e', 'ou', 'se', 'ao', 'aos', 'meu', 'minha', 'meus',
+  'minhas', 'seu', 'sua', 'seus', 'suas', 'esta', 'este', 'isso', 'isto', 'esse', 'essa', 'ele', 'ela', 'eu',
+  'me', 'mim', 'voce', 'nao', 'sim', 'mais', 'muito', 'muita', 'ja', 'tem', 'ter', 'estou', 'estao', 'foi',
+  'ser', 'sao', 'como', 'quando', 'desde', 'apos', 'depois', 'ainda', 'tambem', 'consigo', 'preciso',
+  'aparece', 'favor', 'ola', 'oi', 'bom', 'dia', 'tarde', 'noite', 'hoje', 'ontem',
 ]);
 
 /** Minúsculas, sem acentos, só letras/dígitos e espaços. */
 export function normalizeText(text: string): string {
   return text
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
