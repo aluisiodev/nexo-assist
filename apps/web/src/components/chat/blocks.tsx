@@ -1,9 +1,9 @@
 'use client';
 
-import { CATEGORY_LABELS, PRIORITY_LABELS, TICKET_STATUS_LABELS } from '@nexo/domain';
-import { BookOpen } from 'lucide-react';
+import { CATEGORY_LABELS, IMPACT_LABELS, PRIORITY_LABELS, TICKET_STATUS_LABELS } from '@nexo/domain';
+import { BookOpen, LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { MessageBlock, QuickReply, TicketSummary } from '@/lib/chat';
+import type { DraftView, MessageBlock, QuickReply, TicketSummary } from '@/lib/chat';
 import {
   formatDateTime,
   formatDayMonth,
@@ -13,6 +13,8 @@ import {
   TICKET_STATUS_DOT,
   TICKET_STATUS_TEXT,
 } from '@/lib/format';
+
+import { useChatActions } from './chat-actions';
 
 const cardClass = 'overflow-hidden rounded-2xl border border-ink/9 bg-paper shadow-card';
 
@@ -31,6 +33,8 @@ export function Block({ block, interactive, onSend }: BlockProps) {
       return <TicketCard ticket={block.ticket} />;
     case 'article':
       return <ArticleCard title={block.title} body={block.body} />;
+    case 'ticket_draft':
+      return <DraftCard draft={block.draft} />;
     case 'quick_replies':
       return null; // renderizado dentro do balão (ver QuickReplies)
   }
@@ -165,6 +169,108 @@ function ArticleCard({ title, body }: { title: string; body: string }) {
       </p>
       <h3 className="text-[15.5px] font-semibold text-ink">{title}</h3>
       <p className="mt-1 text-[13.5px] leading-normal text-ink-2">{body}</p>
+    </article>
+  );
+}
+
+const DRAFT_STATE: Record<DraftView['status'], { label: string; dot: string; text: string }> = {
+  pending: { label: 'Aguardando confirmação', dot: 'bg-warning', text: 'text-warning-text' },
+  confirmed: { label: 'Confirmado', dot: 'bg-success', text: 'text-success-text' },
+  cancelled: { label: 'Cancelado', dot: 'bg-ink-3/40', text: 'text-ink-3' },
+  superseded: { label: 'Substituído por outro rascunho', dot: 'bg-ink-3/40', text: 'text-ink-3' },
+};
+
+/** Card de rascunho (Tela 2): nada é gravado no service desk antes de "Confirmar". */
+function DraftCard({ draft }: { draft: DraftView }) {
+  const { draftAction, editDraft, busy } = useChatActions();
+  const state = DRAFT_STATE[draft.status];
+  const pending = draft.status === 'pending';
+  const kind =
+    draft.kind === 'create' ? 'Novo chamado' : draft.kind === 'comment' ? 'Complementar chamado' : 'Reabrir chamado';
+
+  return (
+    <article className={`${cardClass} ${pending ? '' : 'opacity-80'}`} aria-label={`Rascunho ${draft.id}`}>
+      <div className="flex flex-col gap-1.5 px-[18px] pb-3.5 pt-4">
+        <div className="flex items-center gap-2 pb-0.5 text-[12.5px] text-ink-3">
+          <span className="font-medium">{kind}</span>
+          <span className="size-[3px] rounded-full bg-rule" />
+          <span>Rascunho {draft.id}</span>
+          <span className="flex-1" />
+          <span className={`flex items-center gap-1.5 font-medium ${state.text}`}>
+            <span className={`size-1.5 rounded-full ${state.dot}`} />
+            {state.label}
+            {draft.status === 'confirmed' && draft.ticketId ? ` · ${draft.ticketId}` : ''}
+          </span>
+        </div>
+        {draft.kind === 'create' ? (
+          <>
+            <h3 className="text-lg font-semibold leading-tight tracking-[-0.2px] text-ink">{draft.data.title}</h3>
+            {pending && <p className="text-[13.5px] leading-normal text-ink-2">{draft.data.description}</p>}
+          </>
+        ) : (
+          <>
+            <h3 className="text-lg font-semibold leading-tight tracking-[-0.2px] text-ink">
+              {draft.data.ticketId} · {draft.data.ticketTitle}
+            </h3>
+            <p className="border-l-2 border-rule pl-3 text-[13.5px] leading-normal text-ink-2">{draft.data.text}</p>
+          </>
+        )}
+      </div>
+
+      {/* Depois de confirmado/cancelado, o card fica compacto (o chamado aparece logo abaixo). */}
+      {draft.kind === 'create' && pending && (
+        <dl className="mx-[18px] mb-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-rule pt-3 sm:grid-cols-3">
+          <Field label="Categoria">
+            {CATEGORY_LABELS[draft.data.category]} <span className="font-normal text-ink-3">· {draft.data.type}</span>
+          </Field>
+          <Field label="Prioridade">
+            <span className="flex flex-wrap items-center gap-1.5" title={draft.data.priorityReason}>
+              <span className={`size-1.5 rounded-full ${PRIORITY_DOT[draft.data.priority]}`} />
+              {PRIORITY_LABELS[draft.data.priority]}
+              <span className="text-[13.5px] font-normal text-ink-3">
+                · resposta até {formatDayMonth(draft.data.dueAt)}, {formatTime(draft.data.dueAt)}
+              </span>
+            </span>
+          </Field>
+          <Field label="Afetados">{IMPACT_LABELS[draft.data.impact]}</Field>
+        </dl>
+      )}
+
+      {pending && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-rule bg-desk py-2 pl-2 pr-3.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => draftAction(draft.id, 'confirm')}
+            className="flex h-9 items-center gap-2 rounded-lg bg-cta pl-3.5 pr-2.5 text-[13.5px] font-semibold text-white hover:bg-cta-hover disabled:opacity-60"
+          >
+            {busy ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+            Confirmar
+            <kbd className="rounded-md bg-white/15 px-[5px] py-px font-ui text-[11.5px] font-normal text-white/80">
+              Ctrl ↵
+            </kbd>
+          </button>
+          {/* Depois de confirmado/cancelado, o card fica compacto (o chamado aparece logo abaixo). */}
+          {draft.kind === 'create' && pending && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => editDraft(draft.id)}
+              className="flex h-9 items-center rounded-lg border border-ink/12 bg-paper px-3.5 text-[13.5px] font-medium text-ink shadow-field hover:bg-desk disabled:opacity-60"
+            >
+              Editar
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => draftAction(draft.id, 'cancel')}
+            className="flex h-9 items-center rounded-lg px-3.5 text-[13.5px] font-medium text-ink-2 hover:bg-paper disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
     </article>
   );
 }
