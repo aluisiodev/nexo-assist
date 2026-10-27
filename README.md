@@ -34,6 +34,7 @@ Os bancos SQLite são criados na primeira execução e **sobrevivem a reinícios
 | `npm run dev` | Service desk + app em modo desenvolvimento |
 | `npm run build` e `npm start` | Build de produção do app e execução dos dois serviços |
 | `npm test` | Todos os testes (Vitest), sem rede e sem chave de IA |
+| `npm run agent:models` | Lista os modelos que as suas chaves do `.env` conseguem usar |
 | `npm run agent:smoke` | Conversa com o Gemini e o Groq de verdade (usa as chaves do `.env`) e mostra as decisões |
 | `npm run typecheck` | Checagem de tipos estrita em todos os pacotes |
 | `npm run format` | Formata o código (Prettier) |

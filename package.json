@@ -27,6 +27,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "agent:smoke": "npm run agent:smoke -w @nexo/web",
+    "agent:models": "npm run agent:models -w @nexo/web",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

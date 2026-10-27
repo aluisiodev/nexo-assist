@@ -40,12 +40,14 @@ const PROVIDERS = {
   google: {
     label: 'Gemini',
     model: process.env.LLM_GOOGLE_MODEL || 'gemini-flash-lite-latest',
+    toolChoice: 'required' as const,
     hasKey: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY),
     keyName: 'GOOGLE_GENERATIVE_AI_API_KEY',
   },
   groq: {
     label: 'Groq',
     model: process.env.LLM_GROQ_MODEL || 'openai/gpt-oss-120b',
+    toolChoice: 'auto' as const,
     hasKey: Boolean(process.env.GROQ_API_KEY),
     keyName: 'GROQ_API_KEY',
   },
@@ -93,11 +95,26 @@ async function buildService(provider: Provider) {
     name: `${p.label} (${p.model})`,
     model: `${provider}/${p.model}`,
     deps: { serviceDesk, drafts },
+    toolChoice: p.toolChoice,
   });
   return new ConversationService({ repo, responder, serviceDesk, drafts, log: () => {} });
 }
 
+const printed = new Set<string>();
+
 function show(m: ChatMessage) {
+  if (printed.has(m.id)) {
+    // Mensagem já exibida cujo card mudou (ex.: rascunho confirmado).
+    for (const b of m.blocks) {
+      if (b.type === 'ticket_draft') {
+        console.log(
+          `     ↻ card atualizado: rascunho ${b.draft.id} · ${b.draft.status}${b.draft.ticketId ? ` → ${b.draft.ticketId}` : ''}`,
+        );
+      }
+    }
+    return;
+  }
+  printed.add(m.id);
   if (m.role === 'employee') return console.log(`\n  👤 Ana: ${m.text}`);
   if (m.role === 'system') return console.log(`  ⚙  ${m.text}`);
   const t = m.trace;
