@@ -1,0 +1,16 @@
+{
+  "name": "@nexo/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tipos e regras do service desk da Nexo (Anexo A do PRD), sem dependência de LLM ou banco.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
