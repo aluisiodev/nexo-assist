@@ -2,12 +2,6 @@
 
 Agent de atendimento do service desk de TI da Nexo. O funcionário descreve o problema num chat; o agent consulta os chamados dele, busca na central de ajuda, prepara chamados para ele confirmar e chama um analista quando precisa. O analista acompanha tudo num console, com o motivo de cada decisão do agent.
 
-- ✅ Serviço de chamados simulado ("sistema legado" instável de propósito), regras do Anexo A e cliente com retry
-- ✅ Chat do funcionário (Telas 2 e 3): rascunho com confirmação, transferência, "por quê?" em cada resposta
-- ✅ Agent com IA (Mastra + Gemini), com Groq como plano B e modo básico sem IA como reserva final
-- ✅ Console do analista (Telas 4 e 5): fila com filtros, conversa com as decisões do agent, assumir, responder, devolver e encerrar
-- ✅ Qualidade: 144 testes (Vitest), evals das decisões do agent contra a IA real e testes de ponta a ponta no navegador (Playwright)
-
 ## Como rodar
 
 Pré-requisito: **Node.js 20.12+** (recomendado 22, ver `.nvmrc`).
@@ -236,33 +230,3 @@ Os testes de ponta a ponta rodam sem IA (modo básico), em portas próprias (310
 - **Console sem atribuição automática.** O analista escolhe na fila; não há distribuição por carga nem fila por habilidade.
 - **Evals com critérios de comportamento, não de texto.** Não medem tom nem clareza da mensagem; isso exigiria avaliação humana ou um LLM avaliador.
 
-## O que faria com mais tempo
-
-- **Eventos em tempo real** (SSE ou WebSocket, com Redis pub/sub para várias instâncias) no lugar do polling, e notificação no navegador quando chega uma transferência.
-- **Evals no CI** com um orçamento de tokens, rodando a cada mudança de prompt ou de modelo, com histórico das notas e um LLM avaliador para o tom das respostas. Também casos gerados a partir de conversas reais anonimizadas.
-- **Busca semântica** na central de ajuda e na detecção de duplicidade (embeddings no próprio libSQL, que tem busca vetorial).
-- **Métricas do atendimento:** taxa de resolução pelo agent, tempo até um analista assumir, transferências por motivo, custo por conversa e satisfação ao encerrar.
-- **Ações do analista no chamado** direto do console (mudar status, transferir de grupo, comentar), com o histórico de eventos do chamado no painel.
-- **Atribuição automática** por grupo e carga, e alerta quando o prazo da transferência estiver para vencer.
-- **Autenticação real** (SSO da empresa) e trilha de auditoria de quem viu cada conversa.
-- **Tabela de feriados** no cálculo de prazo e **Redis** para o limite por minuto com várias instâncias.
-- **Migrações versionadas** do banco. Hoje o esquema é criado ao subir (`CREATE TABLE IF NOT EXISTS`), o que basta enquanto as tabelas não mudam; para alterar uma tabela já existente (uma coluna nova), entraria uma tabela de versão do esquema e scripts numerados (ou uma ferramenta como Drizzle Kit).
-- **Acessibilidade revisada** com leitor de tela em todo o fluxo e testes automáticos de contraste (axe) nos testes de ponta a ponta.
-
-## Publicar
-
-Os dois serviços rodam num único processo de deploy (`npm start` sobe o app na porta `PORT` da plataforma e o service desk em `localhost:4010`). Os bancos precisam persistir, então há dois caminhos:
-
-**Gratuito: Render + Turso.** O plano gratuito do Render não tem disco persistente, mas o app fala libSQL, então os bancos podem ficar no Turso (plano gratuito, sem cartão). O `render.yaml` na raiz já descreve o serviço.
-
-1. No Turso, crie dois bancos (por exemplo `nexo-app` e `nexo-service-desk`) e gere um token para cada um.
-2. No Render, **New → Blueprint** apontando para o repositório. Preencha `APP_DATABASE_URL` / `APP_DATABASE_AUTH_TOKEN`, `SERVICE_DESK_DATABASE_URL` / `SERVICE_DESK_DATABASE_AUTH_TOKEN` (URLs `libsql://….turso.io`) e as chaves de IA. A `SERVICE_DESK_API_KEY` é gerada pelo Render.
-3. O serviço gratuito dorme após 15 minutos sem acesso e leva cerca de 1 minuto para acordar no primeiro acesso.
-
-**Com disco (Railway ou Fly.io).** Mantém o SQLite em arquivo: monte um volume e aponte `APP_DATABASE_URL=file:/data/app.db` e `SERVICE_DESK_DATABASE_URL=file:/data/service-desk.db` para ele. Não há plano gratuito permanente (o Railway dá um crédito de teste).
-
-Em qualquer caso: defina uma `SERVICE_DESK_API_KEY` própria (o app se recusa a rodar em produção com a de desenvolvimento), mantenha os limites de uso ligados e coloque as chaves de IA só nas variáveis da plataforma.
-
-## Uso de IA
-
-Desenvolvido com apoio de IA (Claude). Decisões de arquitetura e regras foram revisadas e cobertas por testes.
