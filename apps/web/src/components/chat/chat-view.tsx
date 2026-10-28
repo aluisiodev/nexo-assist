@@ -1,7 +1,7 @@
 'use client';
 
 import { CONVERSATION_STATUS_LABELS } from '@nexo/domain';
-import { Bot, Check, Hand, Headset, LoaderCircle, RotateCcw, SendHorizontal, X } from 'lucide-react';
+import { Bot, Check, CircleCheck, Hand, Headset, LoaderCircle, RotateCcw, SendHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { AgentStep, ChatMessage, ChatSnapshot, ConversationView } from '@/lib/chat';
 import { ChatApiError, draftAction, fetchSnapshot, sendMessage, startNewConversation } from '@/lib/chat-api';
@@ -9,9 +9,12 @@ import { ChatActionsContext, type ChatActions } from './chat-actions';
 import { TopBar } from '../top-bar';
 import { MessageItem } from './message-item';
 
-/** Com analista na conversa, buscamos mensagens novas a cada poucos segundos. */
+/**
+ * Com analista na conversa, buscamos mensagens novas a cada 3 s; com o agent, a cada 8 s
+ * (um analista pode assumir ou encerrar pelo console a qualquer momento).
+ */
 const POLL_MS_WITH_TEAM = 3_000;
-const POLL_MS_IDLE = 15_000;
+const POLL_MS_IDLE = 8_000;
 
 function mergeMessages(current: readonly ChatMessage[], incoming: readonly ChatMessage[]): ChatMessage[] {
   const byId = new Map(current.map((m) => [m.id, m]));
@@ -43,12 +46,12 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
 
   // Busca mensagens novas (respostas do analista, mudanças de estado).
   useEffect(() => {
-    if (sending) return undefined;
+    if (sending || conversation.status === 'closed') return undefined;
     const withTeam = conversation.status === 'waiting_analyst' || conversation.status === 'with_analyst';
     const timer = setInterval(
       async () => {
         try {
-          const snap = await fetchSnapshot(lastSeq);
+          const snap = await fetchSnapshot(lastSeq, conversation.id);
           setConversation(snap.conversation);
           if (snap.conversation.id !== conversation.id) setMessages(snap.messages);
           else if (snap.messages.length) setMessages((cur) => mergeMessages(cur, snap.messages));
@@ -229,7 +232,7 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
           onSubmit={onSubmit}
           className="mx-auto flex w-full max-w-[808px] flex-col gap-1.5 px-5 pb-[18px] pt-2.5 sm:px-8"
         >
-          <TeamBanner conversation={conversation} />
+          <TeamBanner conversation={conversation} onNewConversation={newConversation} />
           {error && (
             <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2 text-[13px] text-danger-text">
               {error}
@@ -249,11 +252,13 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
               maxLength={2000}
               disabled={limitReached || closed}
               placeholder={
-                limitReached
-                  ? 'Limite de mensagens atingido. Inicie uma nova conversa.'
-                  : conversation.status === 'agent'
-                    ? 'Escreva para o Nexo…'
-                    : 'Escreva para o analista…'
+                closed
+                  ? 'Conversa encerrada.'
+                  : limitReached
+                    ? 'Limite de mensagens atingido. Inicie uma nova conversa.'
+                    : conversation.status === 'agent'
+                      ? 'Escreva para o Nexo…'
+                      : 'Escreva para o analista…'
               }
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-2 text-[14.5px] text-ink outline-none focus-visible:outline-none placeholder:text-ink-3 disabled:cursor-not-allowed"
             />
@@ -300,7 +305,31 @@ function StatusPill({ conversation, engine }: { conversation: ConversationView; 
   );
 }
 
-function TeamBanner({ conversation }: { conversation: ConversationView }) {
+function TeamBanner({
+  conversation,
+  onNewConversation,
+}: {
+  conversation: ConversationView;
+  onNewConversation: () => void;
+}) {
+  if (conversation.status === 'closed') {
+    return (
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-lg bg-desk px-3.5 py-2 text-[13px] text-ink-2"
+        role="status"
+      >
+        <CircleCheck className="size-4 shrink-0 text-success-text" aria-hidden="true" />
+        <span className="flex-1">Esta conversa foi encerrada. Se precisar de mais alguma coisa, comece outra.</span>
+        <button
+          type="button"
+          onClick={onNewConversation}
+          className="h-8 rounded-lg bg-cta px-3 text-[12.5px] font-semibold text-white hover:bg-cta-hover"
+        >
+          Começar nova conversa
+        </button>
+      </div>
+    );
+  }
   if (conversation.status === 'waiting_analyst') {
     return (
       <p

@@ -1,0 +1,36 @@
+# Blueprint do Render (render.com → New → Blueprint). Um único serviço web roda os dois
+# processos (`npm start`): o app na porta do Render e o service desk em localhost:4010.
+# O plano gratuito não tem disco persistente: os dois bancos ficam no Turso (libSQL),
+# que tem plano gratuito. Veja "Publicar" no README.
+services:
+  - type: web
+    name: nexo-assist
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: SERVICE_DESK_API_KEY
+        generateValue: true
+      - key: SERVICE_DESK_URL
+        value: http://localhost:4010
+      - key: SERVICE_DESK_DATABASE_URL
+        sync: false
+      - key: SERVICE_DESK_DATABASE_AUTH_TOKEN
+        sync: false
+      - key: APP_DATABASE_URL
+        sync: false
+      - key: APP_DATABASE_AUTH_TOKEN
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CHAT_RATE_LIMIT_PER_MINUTE
+        value: '10'
+      - key: AI_DAILY_CALL_LIMIT
+        value: '300'

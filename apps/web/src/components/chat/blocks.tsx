@@ -182,7 +182,7 @@ const DRAFT_STATE: Record<DraftView['status'], { label: string; dot: string; tex
 
 /** Card de rascunho (Tela 2): nada é gravado no service desk antes de "Confirmar". */
 function DraftCard({ draft }: { draft: DraftView }) {
-  const { draftAction, editDraft, busy } = useChatActions();
+  const { draftAction, editDraft, busy, readOnly } = useChatActions();
   const state = DRAFT_STATE[draft.status];
   const pending = draft.status === 'pending';
   const kind =
@@ -236,7 +236,12 @@ function DraftCard({ draft }: { draft: DraftView }) {
         </dl>
       )}
 
-      {pending && (
+      {pending && readOnly && (
+        <p className="border-t border-rule bg-desk px-[18px] py-2.5 text-[12.5px] text-ink-3">
+          Aguardando o funcionário confirmar. Nada foi gravado no service desk ainda.
+        </p>
+      )}
+      {pending && !readOnly && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-rule bg-desk py-2 pl-2 pr-3.5">
           <button
             type="button"
@@ -250,8 +255,7 @@ function DraftCard({ draft }: { draft: DraftView }) {
               Ctrl ↵
             </kbd>
           </button>
-          {/* Depois de confirmado/cancelado, o card fica compacto (o chamado aparece logo abaixo). */}
-          {draft.kind === 'create' && pending && (
+          {draft.kind === 'create' && (
             <button
               type="button"
               disabled={busy}

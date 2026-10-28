@@ -33,6 +33,18 @@ export class DraftService {
     return this.conversations.replaceBlocks(message.id, blocks);
   }
 
+  /**
+   * Desfaz um rascunho de um turno descartado (a resposta nunca chegou ao funcionário).
+   * O que estava pendente antes do turno, e que este substituiu, volta a ficar pendente.
+   */
+  async discard(draftId: string, previous: DraftView | null, now: Date): Promise<void> {
+    await this.drafts.settle(draftId, 'cancelled', null, now);
+    if (previous?.status !== 'pending' || previous.id === draftId) return;
+    await this.drafts.reopen(previous.id, now);
+    const restored = await this.drafts.findById(previous.id);
+    if (restored) await this.refreshBlock(restored);
+  }
+
   withStatus(draft: Draft, status: DraftView['status'], ticketId: string | null): Draft {
     return { ...draft, view: { ...draft.view, status, ticketId } as DraftView };
   }

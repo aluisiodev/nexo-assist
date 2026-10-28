@@ -8,7 +8,7 @@ import { seedIfEmpty } from './seed/seed';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const db = await openDatabase(config.databaseUrl);
+  const db = await openDatabase(config.databaseUrl, config.databaseAuthToken);
   const seeded = await seedIfEmpty(db, new Date());
 
   const app = new Hono();

@@ -1,6 +1,7 @@
 import 'server-only';
 import { createServiceDeskClient, type ServiceDeskClient } from '@nexo/service-desk-client';
 import { buildResponder } from './agent/build-responder';
+import { ConsoleService } from './console/service';
 import type { AgentResponder, ServiceDeskAccess } from './agent/types';
 import { SessionRepository } from './auth/sessions';
 import { ConversationRepository } from './conversations/repository';
@@ -15,6 +16,8 @@ import { SlidingWindowRateLimiter } from './limits/rate-limiter';
 export interface Container {
   readonly sessions: SessionRepository;
   readonly conversations: ConversationService;
+  /** Console do analista (fila, conversa, ações). */
+  readonly console: ConsoleService;
   readonly conversationRepo: ConversationRepository;
   readonly serviceDesk: ServiceDeskClient;
   readonly serviceDeskAccess: ServiceDeskAccess;
@@ -31,7 +34,7 @@ const holder = globalThis as typeof globalThis & { __nexoContainer?: Promise<Con
 
 async function build(): Promise<Container> {
   const e = env();
-  const db = await openAppDatabase(e.APP_DATABASE_URL);
+  const db = await openAppDatabase(e.APP_DATABASE_URL, e.APP_DATABASE_AUTH_TOKEN);
   const clientOptions = { baseUrl: e.SERVICE_DESK_URL, apiKey: e.SERVICE_DESK_API_KEY } as const;
   const serviceDesk = createServiceDeskClient(clientOptions);
 
@@ -66,15 +69,18 @@ async function build(): Promise<Container> {
       `${e.AI_DAILY_CALL_LIMIT || 'sem cota de'} respostas com IA/dia`,
   );
 
+  const conversations = new ConversationService({
+    repo: conversationRepo,
+    responder,
+    serviceDesk: serviceDeskAccess,
+    drafts,
+  });
+
   return {
     sessions: new SessionRepository(db),
     conversationRepo,
-    conversations: new ConversationService({
-      repo: conversationRepo,
-      responder,
-      serviceDesk: serviceDeskAccess,
-      drafts,
-    }),
+    conversations,
+    console: new ConsoleService({ repo: conversationRepo, conversations, serviceDesk }),
     serviceDesk,
     serviceDeskAccess,
     responder,

@@ -26,3 +26,11 @@ Thumbs.db
 
 # Gerado pelo Next.js a cada dev/build
 next-env.d.ts
+
+# Testes de ponta a ponta (Playwright)
+e2e/.data/
+e2e/.report/
+e2e/.results/
+
+# Resultados dos evals (gerados por npm run evals)
+apps/web/evals/results/

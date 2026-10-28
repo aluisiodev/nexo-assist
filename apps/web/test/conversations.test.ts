@@ -158,4 +158,20 @@ describe('transferência e atendimento pelo analista', () => {
     const next = await service.getOrStart(ANA);
     expect(next.id).not.toBe(conv.id);
   });
+
+  it('o chat aberto acompanha a conversa até o encerramento (e só se for do funcionário)', async () => {
+    const conv = await service.getOrStart(ANA);
+    await service.sendEmployeeMessage(ANA, 'oi');
+    await service.assume(RAFAEL, conv.id);
+    await service.closeByAnalyst(RAFAEL, conv.id);
+
+    const followed = await service.snapshotFor(ANA, 0, conv.id);
+    expect(followed.conversation).toMatchObject({ id: conv.id, status: 'closed' });
+    expect(followed.messages.at(-1)?.text).toMatch(/Atendimento encerrado por Rafael Lima/);
+
+    const other = { ...ANA, employeeId: 'emp-bruno', name: 'Bruno Tavares', email: 'bruno.tavares@nexo.com.br' };
+    const stranger = await service.snapshotFor(other, 0, conv.id);
+    expect(stranger.conversation.id).not.toBe(conv.id);
+    expect(stranger.messages).toHaveLength(0);
+  });
 });

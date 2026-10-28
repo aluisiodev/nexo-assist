@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   SERVICE_DESK_URL: opt(z.url().default('http://localhost:4010')),
   SERVICE_DESK_API_KEY: opt(z.string().min(16).default('dev-only-service-desk-key')),
   APP_DATABASE_URL: opt(z.string().default('file:data/app.db')),
+  APP_DATABASE_AUTH_TOKEN: opt(z.string().optional()),
 
   // IA: provedor principal, plano B e modelos. Sem chave, o provedor é ignorado.
   LLM_PROVIDER: opt(z.enum(['google', 'groq', 'none']).default('google')),

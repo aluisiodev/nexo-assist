@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessage, MessageBlock } from '@/lib/chat';
 import { BasicResponder } from '@/server/agent/basic-responder';
 import { FallbackResponder } from '@/server/agent/fallback-responder';
-import { LlmResponder } from '@/server/agent/llm/llm-responder';
+import { LlmResponder, salvageFinalAnswer } from '@/server/agent/llm/llm-responder';
 import { RoutedResponder } from '@/server/agent/routed-responder';
 import type { AgentResponder } from '@/server/agent/types';
 import { ConversationService, type SendEvent } from '@/server/conversations/service';
@@ -41,7 +41,7 @@ async function setup(scripts: { primary: ScriptStep[]; backup?: ScriptStep[] }) 
     clock: () => NOW,
     log: () => {},
   });
-  return { service, sd, primary, backup, repo };
+  return { service, sd, primary, backup, repo, drafts };
 }
 
 const agentReply = (messages: ChatMessage[]) => messages.filter((m) => m.role === 'agent').at(-1)!;
@@ -307,9 +307,123 @@ describe('plano B', () => {
     expect(labels(reply)).toContain('leu a decisão escrita no texto');
   });
 
-  it('se o modelo responde em texto livre (sem a ferramenta responder), a resposta é aproveitada', async () => {
+  it('se o modelo escreve a decisão como "chave: valor" no texto (gpt-oss no Groq), ela também é recuperada', async () => {
+    // Formato real visto no Groq: prosa, depois os campos sem JSON.
+    const text =
+      'Entendi que sua VPN está com o erro 809. confianca: 0.98 entendimento: "Problema de conexão VPN com erro 809" ' +
+      'intenção: "duvida" mensagem: "Reinstale o cliente de VPN pelo portal de softwares e reinicie o notebook." ' +
+      'mostrar_artigo: "kb-vpn-809" mostrar_chamados: null motivo: "Regra 2: buscar na central de ajuda antes de abrir chamado" ' +
+      'opções: null pergunta: null';
+    const { service } = await setup({
+      primary: [{ tools: [{ name: 'buscar_central_ajuda', args: { consulta: 'vpn erro 809' } }] }, { text }],
+    });
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Minha VPN dá erro 809.');
+    const reply = agentReply(messages);
+    expect(reply.text).toBe('Reinstale o cliente de VPN pelo portal de softwares e reinicie o notebook.');
+    expect(reply.text).not.toMatch(/confian/);
+    expect(reply.trace).toMatchObject({ intent: 'duvida', confidence: 0.98, engine: 'IA principal' });
+    expect(block(reply, 'article')).toMatchObject({ id: 'kb-vpn-809' });
+  });
+
+  it('texto sem decisão registrada nunca chega ao funcionário: a cadeia passa para o próximo', async () => {
     const { service } = await setup({ primary: [{ text: 'Olá! Como posso ajudar?' }] });
-    const { messages } = await service.sendEmployeeMessage(ANA, 'oi');
-    expect(agentReply(messages).text).toBe('Olá! Como posso ajudar?');
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Qual o horário do service desk?');
+    const reply = agentReply(messages);
+    expect(reply.text).not.toBe('Olá! Como posso ajudar?');
+    expect(reply.trace?.engine).toBe('regras do service desk (sem IA)');
+    expect(reply.trace?.steps[0]).toMatchObject({
+      label: 'IA principal indisponível, usei regras do service desk (sem IA)',
+      detail: expect.stringMatching(/sem registrar a decisão/),
+      status: 'error',
+    });
+  });
+
+  it('rascunho de um turno descartado é cancelado e o rascunho anterior volta a valer', async () => {
+    const draftArgs = (titulo: string) => ({
+      name: 'preparar_rascunho_chamado',
+      args: {
+        tipo: 'INC',
+        categoria: 'rede_vpn',
+        titulo,
+        descricao: 'O notebook não conecta na VPN e mostra o erro 809 desde ontem.',
+        afetados: 'individual',
+        impede_trabalho: true,
+        tem_alternativa: false,
+        compromisso_hoje: false,
+      },
+    });
+    const { service, drafts } = await setup({
+      primary: [
+        { tools: [draftArgs('VPN com erro 809')] },
+        { tools: [answer({ mensagem: 'Confira o rascunho:' })] },
+        // 2º turno: monta outro rascunho e termina em texto, sem decisão.
+        { tools: [draftArgs('VPN com erro 809 (de novo)')] },
+        { text: 'Preparei o rascunho, confirme.' },
+      ],
+      backup: [{ tools: [answer({ mensagem: 'Seu rascunho D-381 continua aguardando confirmação.' })] }],
+    });
+    await service.sendEmployeeMessage(ANA, 'Minha VPN dá erro 809.');
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Só eu.');
+
+    const reply = agentReply(messages);
+    expect(reply.trace?.engine).toBe('IA reserva');
+    expect(block(reply, 'ticket_draft')).toBeUndefined();
+    expect((await drafts.drafts.findById('D-382'))?.view.status).toBe('cancelled');
+    expect((await drafts.drafts.findById('D-381'))?.view.status).toBe('pending');
+    // O card do D-381 no chat volta a ter os botões.
+    const snapshot = await service.snapshotFor(ANA);
+    const cards = snapshot.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'ticket_draft');
+    expect(cards.map((b) => [b.draft.id, b.draft.status])).toEqual([['D-381', 'pending']]);
+  });
+
+  it('erro do provedor depois de montar um rascunho também desfaz o rascunho', async () => {
+    const { service, drafts } = await setup({
+      primary: [
+        {
+          tools: [
+            {
+              name: 'preparar_rascunho_chamado',
+              args: {
+                tipo: 'INC',
+                categoria: 'rede_vpn',
+                titulo: 'VPN com erro 809',
+                descricao: 'O notebook não conecta na VPN e mostra o erro 809 desde ontem.',
+                afetados: 'individual',
+                impede_trabalho: true,
+                tem_alternativa: false,
+                compromisso_hoje: false,
+              },
+            },
+          ],
+        },
+        { error: new Error('Parsing failed') },
+      ],
+    });
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Minha VPN dá erro 809.');
+    expect(agentReply(messages).trace?.engine).toBe('regras do service desk (sem IA)');
+    expect((await drafts.drafts.findById('D-381'))?.view.status).toBe('cancelled');
+    const { conversation } = await service.snapshotFor(ANA);
+    expect(await drafts.drafts.findPending(conversation.id)).toBeNull();
+  });
+});
+
+describe('leitura da decisão escrita no texto', () => {
+  it('aceita chaves com acento e listas', () => {
+    const text =
+      'Entendi, vamos abrir um chamado. confiança: 1 entendimento: "VPN erro 809 impede reunião às 14h" ' +
+      'intenção: "abrir_chamado" mensagem: "Preparei o rascunho com prioridade alta. Confira." mostrar_artigo: null ' +
+      'mostrar_chamados: null motivo: "Regra 4: preparar rascunho antes de abrir" opções: ["Confirmar", "Cancelar"] pergunta: null';
+    expect(salvageFinalAnswer(text)).toMatchObject({
+      message: 'Preparei o rascunho com prioridade alta. Confira.',
+      intent: 'abrir_chamado',
+      confidence: 1,
+      options: ['Confirmar', 'Cancelar'],
+    });
+  });
+
+  it('recusa quando falta um campo obrigatório ou não há decisão', () => {
+    expect(salvageFinalAnswer('Olá! Como posso ajudar?')).toBeNull();
+    expect(salvageFinalAnswer('mensagem: "oi" confianca: 0.9')).toBeNull();
+    expect(salvageFinalAnswer('{"mensagem": "oi", "confianca": 2}')).toBeNull();
   });
 });

@@ -3,3 +3,7 @@ node_modules
 data
 package-lock.json
 *.md
+e2e/.report
+e2e/.results
+e2e/.data
+apps/web/evals/results

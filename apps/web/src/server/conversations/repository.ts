@@ -163,6 +163,20 @@ export class ConversationRepository {
     return row ? toConversation(row) : null;
   }
 
+  /**
+   * Conversas para o console do analista: todas as abertas com alguma mensagem e as
+   * encerradas desde `closedSince`. Conversas vazias (só abriram a tela) ficam de fora.
+   */
+  async listForConsole(closedSince: Date, limit = 200): Promise<Conversation[]> {
+    const rs = await this.db.execute({
+      sql: `SELECT * FROM conversations
+            WHERE last_message_preview IS NOT NULL AND (status != 'closed' OR closed_at >= ?)
+            ORDER BY last_message_at DESC LIMIT ?`,
+      args: [closedSince.toISOString(), limit],
+    });
+    return rs.rows.map(toConversation);
+  }
+
   async create(owner: ConversationOwner, now: Date): Promise<Conversation> {
     const id = `c_${randomUUID()}`;
     const at = now.toISOString();
@@ -200,11 +214,13 @@ export class ConversationRepository {
           ],
         },
         {
+          // A prévia (usada na fila do console) mostra a última fala, não os avisos do sistema.
           sql: `UPDATE conversations
-                SET last_message_at = ?, last_message_preview = ?, updated_at = ?,
+                SET last_message_at = ?, updated_at = ?,
+                    last_message_preview = CASE WHEN ? = 'system' THEN last_message_preview ELSE ? END,
                     employee_message_count = employee_message_count + ?
                 WHERE id = ?`,
-          args: [at, preview(message.text), at, countIncrement, conversationId],
+          args: [at, at, message.role, preview(message.text), countIncrement, conversationId],
         },
       ],
       'write',

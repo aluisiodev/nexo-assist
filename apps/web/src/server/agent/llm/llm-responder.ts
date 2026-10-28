@@ -75,6 +75,7 @@ export class LlmResponder implements AgentResponder {
 
     let text = '';
     let tokens: number | undefined;
+    const tools: string[] = [];
     try {
       const output = await this.agent.stream(toModelMessages(ctx.history), {
         requestContext,
@@ -92,40 +93,51 @@ export class LlmResponder implements AgentResponder {
       });
       for await (const chunk of output.fullStream) {
         if (chunk.type === 'error') throw (chunk.payload as { error?: unknown }).error ?? new Error('erro no modelo');
+        if (chunk.type === 'tool-call') tools.push((chunk.payload as { toolName: string }).toolName);
       }
       text = (await output.text) ?? '';
       const usage = (await output.usage) as { totalTokens?: number } | undefined;
       tokens = usage?.totalTokens;
     } catch (err) {
+      await this.discard(turn);
       throw new ResponderUnavailableError(this.name, describeError(err), { cause: err });
     }
 
-    // Alguns modelos (ex.: gpt-oss no Groq) escrevem a resposta final como JSON no texto
-    // em vez de chamar a ferramenta. Lemos esse JSON para não perder a decisão.
+    // Alguns modelos (ex.: gpt-oss no Groq) escrevem a resposta final no texto em vez de
+    // chamar a ferramenta. Lemos a decisão de lá para não perdê-la.
     if (!turn.final && text.trim()) {
       const salvaged = salvageFinalAnswer(text);
       if (salvaged) {
         turn.final = salvaged;
         turn.steps.push({
           label: 'leu a decisão escrita no texto',
-          detail: 'O modelo escreveu a resposta em JSON em vez de chamar a ferramenta "responder".',
+          detail: 'O modelo escreveu a resposta no texto em vez de chamar a ferramenta "responder".',
         });
       }
     }
 
+    // Sem decisão registrada, a resposta não vai para o funcionário: não há "por quê?"
+    // para mostrar e o texto pode afirmar algo que nenhuma ferramenta fez. O turno é
+    // desfeito e a cadeia de reserva tenta o próximo (outra IA ou o modo básico).
     const final = turn.final;
-    if (!final && !text.trim()) {
-      throw new ResponderUnavailableError(this.name, 'O modelo terminou sem resposta.');
+    if (!final) {
+      await this.discard(turn);
+      throw new ResponderUnavailableError(
+        this.name,
+        text.trim()
+          ? 'o modelo respondeu sem registrar a decisão; a resposta foi descartada'
+          : 'o modelo terminou sem resposta',
+      );
     }
 
-    const message = final?.message ?? text.trim();
+    const message = final.message;
     const blocks: MessageBlock[] = [];
     const steps: AgentStep[] = turn.steps;
 
     // Cards: só de chamados que as ferramentas devolveram neste turno (ou buscados agora,
     // com a privacidade aplicada pelo service desk).
     const shown = [];
-    for (const id of final?.showTickets ?? []) {
+    for (const id of final.showTickets) {
       const key = id.trim().toUpperCase();
       const ticket = turn.tickets.get(key) ?? (await turn.sd.getTicket(key).catch(() => null));
       if (ticket) shown.push(ticket);
@@ -133,27 +145,26 @@ export class LlmResponder implements AgentResponder {
     if (shown.length === 1) blocks.push({ type: 'ticket_card', ticket: toTicketSummary(shown[0]!) });
     if (shown.length > 1) blocks.push({ type: 'ticket_list', tickets: shown.map(toTicketSummary), selectable: true });
 
-    const article = final?.showArticle ? turn.articles.get(final.showArticle) : undefined;
+    const article = final.showArticle ? turn.articles.get(final.showArticle) : undefined;
     if (article) blocks.push({ type: 'article', id: article.id, title: article.title, body: article.body });
 
     if (turn.draft) blocks.push({ type: 'ticket_draft', draft: turn.draft });
 
-    const options: QuickReply[] = (final?.options ?? []).map((label) => ({ label }));
+    const options: QuickReply[] = final.options.map((label) => ({ label }));
     // Regra: chamado vencido → oferecer analista (Anexo A), mesmo que o modelo esqueça.
     const overdue = shown.some((t) => t.sla.overdue);
     if (overdue && !turn.handoff && !options.some((o) => /analista/i.test(o.label))) {
       options.push({ label: 'Falar com um analista' });
       steps.push({ label: 'ofereceu um analista', detail: 'Regra: chamado com prazo vencido.' });
     }
-    if (!turn.draft && (options.length > 0 || final?.question)) {
-      if (options.length > 0)
-        blocks.push({ type: 'quick_replies', question: final?.question, options: options.slice(0, 4) });
+    if (!turn.draft && options.length > 0) {
+      blocks.push({ type: 'quick_replies', question: final.question, options: options.slice(0, 4) });
     }
 
     // Regra: sem segurança e sem outra ação → pede ajuda a um analista.
     let handoff: HandoffRequest | undefined = turn.handoff ?? undefined;
     let reply = message;
-    if (!handoff && !turn.draft && final && final.confidence < LOW_CONFIDENCE) {
+    if (!handoff && !turn.draft && final.confidence < LOW_CONFIDENCE) {
       handoff = {
         reason: 'low_confidence',
         group: 'N1',
@@ -169,20 +180,29 @@ export class LlmResponder implements AgentResponder {
 
     const trace: AgentTrace = {
       engine: this.name,
-      ...(final
-        ? {
-            intent: final.intent,
-            understood: final.understood,
-            confidence: final.confidence,
-            reasoning: final.reasoning,
-          }
-        : { reasoning: 'O modelo respondeu sem registrar a decisão.' }),
+      intent: final.intent,
+      understood: final.understood,
+      confidence: final.confidence,
+      reasoning: final.reasoning,
       steps,
+      tools,
       durationMs: Date.now() - started,
       ...(tokens !== undefined ? { tokens } : {}),
     };
 
     return { messages: [{ text: reply, blocks, trace }], ...(handoff ? { handoff } : {}) };
+  }
+
+  /**
+   * Desfaz o que o turno gravou antes de falhar: o rascunho montado nunca chegou ao
+   * funcionário, então não pode ficar pendente (um "sim" depois confirmaria algo que ele
+   * não viu). O rascunho que estava pendente antes do turno volta a valer.
+   */
+  private async discard(turn: TurnState): Promise<void> {
+    if (!turn.draft) return;
+    await this.deps.drafts
+      .discard(turn.draft.id, turn.ctx.pendingDraft ?? null, turn.ctx.now)
+      .catch((err: unknown) => console.warn('[agent] não consegui desfazer o rascunho', turn.draft?.id, err));
   }
 }
 
@@ -201,18 +221,70 @@ function describeError(err: unknown): string {
   return 'falha desconhecida do provedor';
 }
 
-/** Procura um objeto JSON com os campos da ferramenta `responder` dentro do texto. */
+/**
+ * Lê a decisão que o modelo escreveu no texto em vez de chamar `responder`. Aceita os
+ * dois formatos vistos no gpt-oss: um objeto JSON e uma lista "chave: valor" (com ou
+ * sem acento nas chaves). Só aceita se todos os campos obrigatórios passarem no schema.
+ */
 export function salvageFinalAnswer(text: string): ReturnType<typeof toFinalAnswer> | null {
+  for (const raw of [jsonFields(text), keyValueFields(text)]) {
+    if (!raw) continue;
+    // null → ausente (o schema usa campos opcionais); chaves sem acento, como no schema.
+    const cleaned = Object.fromEntries(
+      Object.entries(raw)
+        .filter(([, v]) => v !== null)
+        .map(([k, v]) => [plainKey(k), v]),
+    );
+    const parsed = ResponderInputSchema.safeParse(cleaned);
+    if (parsed.success) return toFinalAnswer(parsed.data);
+  }
+  return null;
+}
+
+const plainKey = (key: string) =>
+  key
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+function jsonFields(text: string): Record<string, unknown> | null {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
   try {
-    const raw = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-    // null → ausente (o schema usa campos opcionais).
-    const cleaned = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null));
-    const parsed = ResponderInputSchema.safeParse(cleaned);
-    return parsed.success ? toFinalAnswer(parsed.data) : null;
+    const raw: unknown = JSON.parse(text.slice(start, end + 1));
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   } catch {
     return null;
+  }
+}
+
+/** Chaves da ferramenta `responder`, com as variações de acento que o modelo usa. */
+const KEY_PATTERN =
+  /(?<![\p{L}_])["']?(mensagem|inten[cç][aã]o|entendimento|confian[cç]a|motivo|mostrar_chamados|mostrar_artigo|pergunta|op[cç][oõ]es)["']?\s*:/giu;
+
+/** `confianca: 0.98 entendimento: "..." opcoes: ["a", "b"]` → objeto. */
+function keyValueFields(text: string): Record<string, unknown> | null {
+  const matches = [...text.matchAll(KEY_PATTERN)];
+  if (matches.length < 2) return null;
+  const out: Record<string, unknown> = {};
+  matches.forEach((m, i) => {
+    const from = m.index + m[0].length;
+    const to = matches[i + 1]?.index ?? text.length;
+    out[m[1]!] = parseValue(text.slice(from, to));
+  });
+  return out;
+}
+
+function parseValue(raw: string): unknown {
+  const value = raw
+    .trim()
+    .replace(/[,;}]+$/, '')
+    .trim();
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value.replace(/^["“']|["”']$/g, '').trim();
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, MessageSquare, UserRound, type LucideIcon } from 'lucide-react';
+import { Inbox, LogOut, MessageSquare, UserRound, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '@/app/login/actions';
@@ -13,13 +13,26 @@ interface NavItem {
   readonly icon: LucideIcon;
 }
 
-/** Barra lateral das telas do funcionário (Telas 2, 3 e perfil). */
-export function AppSidebar({ name, email, nav }: { name: string; email: string; nav?: readonly NavItem[] }) {
-  const pathname = usePathname();
-  const items = nav ?? [
+const NAV: Record<'employee' | 'analyst', readonly NavItem[]> = {
+  employee: [
     { href: '/atendimento', label: 'Atendimento', icon: MessageSquare },
     { href: '/perfil', label: 'Meu perfil', icon: UserRound },
-  ];
+  ],
+  analyst: [{ href: '/console', label: 'Fila de atendimento', icon: Inbox }],
+};
+
+/** Barra lateral: telas do funcionário (Telas 2, 3 e perfil) e console do analista (Telas 4 e 5). */
+export function AppSidebar({
+  name,
+  email,
+  variant = 'employee',
+}: {
+  name: string;
+  email: string;
+  variant?: 'employee' | 'analyst';
+}) {
+  const pathname = usePathname();
+  const items = NAV[variant];
 
   return (
     <>

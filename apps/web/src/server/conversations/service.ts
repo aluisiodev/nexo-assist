@@ -179,8 +179,15 @@ export class ConversationService {
     );
   }
 
-  async snapshotFor(user: SessionUser, afterSeq = 0): Promise<ChatSnapshot> {
-    const conversation = await this.getOrStart(user);
+  /**
+   * Conversa atual do funcionário. Com `conversationId` (o chat aberto no navegador),
+   * devolve essa conversa mesmo que tenha sido encerrada, para ele ver o aviso de
+   * encerramento em vez de a tela trocar sozinha para uma conversa vazia.
+   */
+  async snapshotFor(user: SessionUser, afterSeq = 0, conversationId?: string): Promise<ChatSnapshot> {
+    const requested = conversationId ? await this.repo.findById(conversationId) : null;
+    const conversation =
+      requested && requested.employeeId === user.employeeId ? requested : await this.getOrStart(user);
     return {
       conversation: this.toView(conversation),
       messages: await this.repo.listMessages(conversation.id, afterSeq),
@@ -368,6 +375,8 @@ export class ConversationService {
       c,
       { type: 'close', by: 'analyst', analystId: analyst.employeeId },
       `Atendimento encerrado por ${analyst.name} · ${hhmm(this.clock())}`,
+      // Quem encerrou fica registrado, mesmo sem ter assumido (ex.: conversa com o agent).
+      { assignedAnalystName: c.assignedAnalystName ?? analyst.name },
     );
   }
 

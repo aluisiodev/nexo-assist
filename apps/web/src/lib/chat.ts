@@ -129,6 +129,8 @@ export const AgentTraceSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   reasoning: z.string().optional(),
   steps: z.array(AgentStepSchema),
+  /** Ferramentas que a IA chamou, na ordem (ex.: buscar_central_ajuda → responder). */
+  tools: z.array(z.string()).optional(),
   durationMs: z.number().optional(),
   /** Tokens gastos na resposta (custo por conversa). */
   tokens: z.number().optional(),

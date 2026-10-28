@@ -47,12 +47,17 @@ async function request(url: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-async function call<T extends z.ZodType>(schema: T, url: string, init?: RequestInit): Promise<z.output<T>> {
+/** Chama uma rota da API e valida a resposta (também usado pelo console). */
+export async function call<T extends z.ZodType>(schema: T, url: string, init?: RequestInit): Promise<z.output<T>> {
   const res = await request(url, init);
   return schema.parse(await res.json());
 }
 
-export const fetchSnapshot = (after = 0): Promise<ChatSnapshot> => call(ChatSnapshotSchema, `/api/chat?after=${after}`);
+export const fetchSnapshot = (after = 0, conversationId?: string): Promise<ChatSnapshot> =>
+  call(
+    ChatSnapshotSchema,
+    `/api/chat?after=${after}${conversationId ? `&conversation=${encodeURIComponent(conversationId)}` : ''}`,
+  );
 
 export const startNewConversation = (): Promise<ChatSnapshot> =>
   call(ChatSnapshotSchema, '/api/chat/new', { method: 'POST' });

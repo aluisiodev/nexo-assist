@@ -11,11 +11,13 @@ interface Props {
   readonly isLast: boolean;
   readonly pending?: boolean;
   readonly onSend: (text: string) => void;
+  /** Console do analista: abre o "por quê?" de todas as respostas. */
+  readonly expandTraces?: boolean;
 }
 
 const bubbleText = 'whitespace-pre-wrap break-words text-[14.5px] leading-normal';
 
-export function MessageItem({ message: m, isLast, pending = false, onSend }: Props) {
+export function MessageItem({ message: m, isLast, pending = false, onSend, expandTraces = false }: Props) {
   if (m.role === 'employee') {
     return (
       <div className="flex justify-end">
@@ -65,7 +67,7 @@ export function MessageItem({ message: m, isLast, pending = false, onSend }: Pro
   const after = m.blocks.filter((b) => b.type !== 'ticket_card' && b.type !== 'quick_replies');
   return (
     <div className="flex flex-col gap-1.5">
-      <AgentStatusLine trace={m.trace} />
+      <AgentStatusLine trace={m.trace} expandAll={expandTraces} />
       {before.map((b, i) => (
         <Block key={`b${i}`} block={b} interactive={isLast} onSend={onSend} />
       ))}

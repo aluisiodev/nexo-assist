@@ -16,6 +16,7 @@ const EnvSchema = z.object({
   SERVICE_DESK_PORT: optional(z.coerce.number().int().positive().default(4010)),
   SERVICE_DESK_API_KEY: optional(z.string().min(16, 'precisa ter ao menos 16 caracteres').default(DEV_API_KEY)),
   SERVICE_DESK_DATABASE_URL: optional(z.string().default('file:data/service-desk.db')),
+  SERVICE_DESK_DATABASE_AUTH_TOKEN: optional(z.string().optional()),
   CHAOS_FAILURE_RATE: optional(z.coerce.number().min(0).max(1).default(0.05)),
   CHAOS_OUTAGE_MS: optional(z.coerce.number().int().min(0).default(4000)),
   CHAOS_LATENCY_MS: optional(z.coerce.number().int().min(0).default(150)),
@@ -26,6 +27,8 @@ export interface ServiceDeskConfig {
   readonly port: number;
   readonly apiKey: string;
   readonly databaseUrl: string;
+  /** Token do libSQL remoto (Turso); vazio para arquivo local. */
+  readonly databaseAuthToken: string | undefined;
   readonly chaos: { readonly failureRate: number; readonly outageMs: number; readonly latencyMs: number };
   readonly usingDevApiKey: boolean;
 }
@@ -49,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServiceDeskCon
     port: e.SERVICE_DESK_PORT,
     apiKey: e.SERVICE_DESK_API_KEY,
     databaseUrl: e.SERVICE_DESK_DATABASE_URL,
+    databaseAuthToken: e.SERVICE_DESK_DATABASE_AUTH_TOKEN,
     chaos: { failureRate: e.CHAOS_FAILURE_RATE, outageMs: e.CHAOS_OUTAGE_MS, latencyMs: e.CHAOS_LATENCY_MS },
     usingDevApiKey,
   };

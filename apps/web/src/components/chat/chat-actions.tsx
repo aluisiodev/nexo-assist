@@ -9,6 +9,8 @@ export interface ChatActions {
   readonly editDraft: (draftId: string) => void;
   /** Alguma ação em andamento (desabilita botões). */
   readonly busy: boolean;
+  /** Visão do analista: os cards mostram o estado, sem os botões do funcionário. */
+  readonly readOnly?: boolean;
 }
 
 const noop = () => {};

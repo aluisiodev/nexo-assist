@@ -1,15 +1,17 @@
 'use client';
 
 import { Check, ChevronDown, X } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { AgentTrace } from '@/lib/chat';
 
 /**
  * Linha de status acima da resposta ("consultou seus chamados") e, ao expandir, o
  * registro completo da decisão: o que entendeu, o que fez, com que segurança e por quê.
  */
-export function AgentStatusLine({ trace }: { trace: AgentTrace | null }) {
-  const [open, setOpen] = useState(false);
+export function AgentStatusLine({ trace, expandAll = false }: { trace: AgentTrace | null; expandAll?: boolean }) {
+  const [open, setOpen] = useState(expandAll);
+  // No console, o analista pode abrir todos os registros de uma vez.
+  useEffect(() => setOpen(expandAll), [expandAll]);
   const panelId = useId();
   const steps = trace?.steps ?? [];
 
@@ -98,6 +100,12 @@ function TraceDetails({ id, trace }: { id: string; trace: AgentTrace }) {
                 ))}
               </ol>
             </dd>
+          </>
+        )}
+        {trace.tools && trace.tools.length > 0 && (
+          <>
+            <dt className="text-ink-3">Ferramentas</dt>
+            <dd className="font-data text-[12px] text-ink-3">{trace.tools.join(' → ')}</dd>
           </>
         )}
         <dt className="text-ink-3">Respondido por</dt>

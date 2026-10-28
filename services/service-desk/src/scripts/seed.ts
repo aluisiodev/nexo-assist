@@ -3,7 +3,7 @@ import { openDatabase } from '../db/client';
 import { seedIfEmpty } from '../seed/seed';
 
 const config = loadConfig();
-const db = await openDatabase(config.databaseUrl);
+const db = await openDatabase(config.databaseUrl, config.databaseAuthToken);
 const seeded = await seedIfEmpty(db, new Date());
 console.log(
   seeded
