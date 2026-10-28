@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { SessionUser } from './auth/sessions';
 import { currentUser } from './auth/session';
 import { ConversationError } from './conversations/service';
+import { isSameOrigin } from './origin';
 
 export interface ApiError {
   readonly status: number;
@@ -32,26 +33,12 @@ export function describeError(err: unknown): ApiError {
   return { status: 500, code: 'internal_error', message: 'Algo deu errado do nosso lado. Tente de novo.' };
 }
 
-/**
- * Proteção contra CSRF em rotas que mudam estado: além do cookie SameSite=Lax,
- * exige que a requisição venha da própria origem.
- */
-function sameOrigin(req: Request): boolean {
-  const origin = req.headers.get('origin');
-  if (!origin) return true; // navegadores sempre enviam Origin em POST cross-site
-  try {
-    return new URL(origin).host === new URL(req.url).host;
-  } catch {
-    return false;
-  }
-}
-
 type Handler<C> = (user: SessionUser, req: Request, ctx: C) => Promise<Response>;
 
 /** Envolve uma rota de API: autenticação, papel, origem e tradução de erros. */
 export function withUser<C = unknown>(role: 'employee' | 'analyst', handler: Handler<C>) {
   return async (req: Request, ctx: C): Promise<Response> => {
-    if (req.method !== 'GET' && !sameOrigin(req)) return apiError(403, 'forbidden', 'Origem não permitida.');
+    if (req.method !== 'GET' && !isSameOrigin(req)) return apiError(403, 'forbidden', 'Origem não permitida.');
     const user = await currentUser();
     if (!user) return apiError(401, 'unauthorized', 'Sua sessão expirou. Entre de novo.');
     if (user.role !== role) return apiError(403, 'forbidden', 'Acesso não permitido para o seu perfil.');
