@@ -38,14 +38,14 @@ const intent = (...intents: string[]): Check => ({
 export const CASES: readonly EvalCase[] = [
   {
     id: 'kb-horario',
-    title: 'Dúvida resolvida pela central de ajuda',
-    rule: 'Anexo A: buscar na central de ajuda antes de abrir chamado',
+    title: 'Dúvida simples, sem abrir chamado',
+    rule: 'Responder com a central de ajuda (ou o contexto) e não abrir chamado',
     turns: ['Qual o horário de atendimento do service desk?'],
     checks: [
       noError,
-      used('buscar_central_ajuda'),
+      // O horário também está nas instruções do agent: responder dali está certo.
       {
-        label: 'mostrou o artigo kb-horario (ou citou o horário)',
+        label: 'respondeu com o horário certo (8h às 18h)',
         ok: (o) => o.articlesShown.includes('kb-horario') || /\b8\s?h|8:00/.test(allText(o)),
       },
       noDraft,

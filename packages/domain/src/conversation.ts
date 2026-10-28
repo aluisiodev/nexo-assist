@@ -40,7 +40,10 @@ export const CLOSED_BY = ['agent', 'analyst', 'employee'] as const;
 export const ClosedBySchema = z.enum(CLOSED_BY);
 export type ClosedBy = z.infer<typeof ClosedBySchema>;
 
-/** Limite do PRD: 30 mensagens do funcionário por sessão (conversa). */
+/**
+ * Limite do PRD: 30 mensagens do funcionário por sessão (conversa). Conta só as mensagens
+ * respondidas pelo assistente (o que gasta IA); a conversa com um analista não tem limite.
+ */
 export const MAX_EMPLOYEE_MESSAGES_PER_SESSION = 30;
 
 export interface ConversationState {
@@ -100,14 +103,26 @@ export function transition(state: ConversationState, action: ConversationAction)
 /** O agent só responde quando a conversa está com ele. */
 export const agentCanRespond = (status: ConversationStatus): boolean => status === 'agent';
 
-/** Pode o funcionário mandar mais uma mensagem? */
+/**
+ * Pode o funcionário mandar mais uma mensagem? Só não pode em conversa encerrada.
+ * O limite de mensagens vale para o assistente (ver `nextRoute`), nunca para a conversa
+ * com um analista: ninguém precisa recomeçar a conversa no meio de um atendimento.
+ */
 export function employeeCanSend(
   status: ConversationStatus,
-  employeeMessageCount: number,
-): { readonly ok: true } | { readonly ok: false; readonly reason: 'closed' | 'limit_reached' } {
-  if (status === 'closed') return { ok: false, reason: 'closed' };
-  if (employeeMessageCount >= MAX_EMPLOYEE_MESSAGES_PER_SESSION) return { ok: false, reason: 'limit_reached' };
-  return { ok: true };
+): { readonly ok: true } | { readonly ok: false; readonly reason: 'closed' } {
+  return status === 'closed' ? { ok: false, reason: 'closed' } : { ok: true };
+}
+
+/**
+ * Para onde vai a próxima mensagem do funcionário:
+ * - `agent`: o assistente responde (e a mensagem conta no limite da sessão);
+ * - `limit_handoff`: o limite com o assistente acabou, então a conversa vai para um analista;
+ * - `team`: a conversa está com (ou aguardando) um analista; não conta no limite.
+ */
+export function nextRoute(status: ConversationStatus, agentMessageCount: number): 'agent' | 'limit_handoff' | 'team' {
+  if (!agentCanRespond(status)) return 'team';
+  return agentMessageCount >= MAX_EMPLOYEE_MESSAGES_PER_SESSION ? 'limit_handoff' : 'agent';
 }
 
 /**

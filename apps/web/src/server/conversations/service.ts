@@ -1,10 +1,10 @@
 import {
-  agentCanRespond,
   analystCanWrite,
   employeeCanSend,
   handoffDueAt,
   handoffTargetLabel,
   MAX_EMPLOYEE_MESSAGES_PER_SESSION,
+  nextRoute,
   normalizeText,
   PRIORITY_LABELS,
   transition,
@@ -32,7 +32,6 @@ export type ConversationErrorCode =
   | 'not_found'
   | 'forbidden'
   | 'closed'
-  | 'limit_reached'
   | 'conflict'
   | 'draft_not_pending'
   | 'service_desk_unavailable'
@@ -212,27 +211,44 @@ export class ConversationService {
     onEvent?: (e: SendEvent) => void,
   ): Promise<ChatActionResult> {
     let conversation = await this.getOrStart(user);
-    const allowed = employeeCanSend(conversation.status, conversation.employeeMessageCount);
-    if (!allowed.ok) {
-      throw allowed.reason === 'limit_reached'
-        ? new ConversationError(
-            'limit_reached',
-            `Você chegou ao limite de ${MAX_EMPLOYEE_MESSAGES_PER_SESSION} mensagens desta sessão. Inicie uma nova conversa.`,
-            429,
-          )
-        : new ConversationError('closed', 'Esta conversa foi encerrada.', 409);
+    if (!employeeCanSend(conversation.status).ok) {
+      throw new ConversationError('closed', 'Esta conversa foi encerrada.', 409);
     }
+    const route = nextRoute(conversation.status, conversation.employeeMessageCount);
 
     const out: ChatMessage[] = [];
     const employeeMessage = await this.repo.appendMessage(
       conversation.id,
-      { role: 'employee', authorId: user.employeeId, authorName: user.name, text },
+      {
+        role: 'employee',
+        authorId: user.employeeId,
+        authorName: user.name,
+        text,
+        countsTowardLimit: route === 'agent',
+      },
       this.clock(),
     );
     out.push(employeeMessage);
     onEvent?.({ type: 'message', message: employeeMessage });
 
-    if (agentCanRespond(conversation.status)) {
+    // Acabou o limite com o assistente: em vez de travar o chat, um analista continua.
+    if (route === 'limit_handoff') {
+      out.push(
+        await this.appendSystem(
+          conversation.id,
+          `Você usou as ${MAX_EMPLOYEE_MESSAGES_PER_SESSION} mensagens com o assistente nesta sessão. Chamei um analista para continuar com você.`,
+        ),
+      );
+      const result = await this.handoff(conversation, {
+        reason: 'message_limit',
+        group: 'N1',
+        summary: `${user.name} chegou ao limite de ${MAX_EMPLOYEE_MESSAGES_PER_SESSION} mensagens com o assistente nesta sessão. Última mensagem: "${text}"`,
+      });
+      out.push(...result.messages);
+      return { conversation: this.toView(await this.mustFind(conversation.id)), messages: out };
+    }
+
+    if (route === 'agent') {
       const pending = await this.drafts.drafts.findPending(conversation.id);
       const normalized = normalizeText(text);
 
@@ -269,17 +285,16 @@ export class ConversationService {
     }
 
     conversation = await this.mustFind(conversation.id);
-    if (conversation.employeeMessageCount >= MAX_EMPLOYEE_MESSAGES_PER_SESSION && conversation.status !== 'closed') {
+    // Avisa uma vez, quando a última mensagem com o assistente acabou de ser usada.
+    if (
+      route === 'agent' &&
+      conversation.status === 'agent' &&
+      conversation.employeeMessageCount === MAX_EMPLOYEE_MESSAGES_PER_SESSION
+    ) {
       out.push(
-        await this.repo.appendMessage(
+        await this.appendSystem(
           conversation.id,
-          {
-            role: 'system',
-            authorId: null,
-            authorName: null,
-            text: `Limite de ${MAX_EMPLOYEE_MESSAGES_PER_SESSION} mensagens desta sessão atingido. Para continuar, inicie uma nova conversa.`,
-          },
-          this.clock(),
+          `Você usou as ${MAX_EMPLOYEE_MESSAGES_PER_SESSION} mensagens com o assistente desta sessão. A próxima mensagem vai para um analista (ou comece uma nova conversa).`,
         ),
       );
     }
@@ -544,6 +559,14 @@ export class ConversationService {
     return this.repo.appendMessage(
       conversationId,
       { role: 'agent', authorId: null, authorName: AGENT_NAME, text, blocks, trace },
+      this.clock(),
+    );
+  }
+
+  private appendSystem(conversationId: string, text: string) {
+    return this.repo.appendMessage(
+      conversationId,
+      { role: 'system', authorId: null, authorName: null, text },
       this.clock(),
     );
   }

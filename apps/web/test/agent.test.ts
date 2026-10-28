@@ -338,6 +338,36 @@ describe('plano B', () => {
     });
   });
 
+  it('chamada de ferramenta malformada (Groq 400): tenta de novo no mesmo provedor e registra', async () => {
+    const malformed = Object.assign(
+      new Error("Tool call validation failed: attempted to call tool 'json' which was not in request.tools"),
+      { statusCode: 400 },
+    );
+    const { service } = await setup({
+      // Duas falhas seguidas: a primeira é repetida pelo próprio Mastra; a segunda derruba a tentativa.
+      primary: [
+        { error: malformed, once: true },
+        { error: malformed, once: true },
+        { tools: [answer({ mensagem: 'Deu certo na segunda.' })] },
+      ],
+    });
+    const { messages } = await service.sendEmployeeMessage(ANA, 'Quanto vou receber de vale-refeição?');
+    const reply = agentReply(messages);
+    expect(reply.text).toBe('Deu certo na segunda.');
+    expect(reply.trace?.engine).toBe('IA principal');
+    expect(reply.trace?.steps[0]).toMatchObject({ label: 'o modelo errou o formato, tentei de novo', status: 'error' });
+  });
+
+  it('resposta sem decisão: tenta de novo uma vez antes de passar para o próximo', async () => {
+    const { service } = await setup({
+      primary: [{ text: 'Olá! Como posso ajudar?' }, { tools: [answer({ mensagem: 'Agora com decisão.' })] }],
+    });
+    const { messages } = await service.sendEmployeeMessage(ANA, 'oi');
+    const reply = agentReply(messages);
+    expect(reply.text).toBe('Agora com decisão.');
+    expect(reply.trace).toMatchObject({ engine: 'IA principal', intent: 'teste' });
+  });
+
   it('rascunho de um turno descartado é cancelado e o rascunho anterior volta a valer', async () => {
     const draftArgs = (titulo: string) => ({
       name: 'preparar_rascunho_chamado',

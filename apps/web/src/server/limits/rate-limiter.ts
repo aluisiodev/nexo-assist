@@ -1,16 +1,18 @@
 /**
- * Limite de velocidade por chave (ex.: funcionário), em janela deslizante.
- * Protege a cota de IA contra cliques repetidos ou scripts; uso normal nunca chega nele.
+ * Limite de velocidade por chave (ex.: funcionário), no formato "balde de fichas":
+ * cabem `limit` mensagens seguidas e uma ficha volta a cada `windowMs / limit`.
+ * Quem passa do limite espera só até a próxima ficha (com 10 por minuto, até 6 s),
+ * e não o minuto inteiro como numa janela fixa.
  *
  * Fica em memória: basta para um processo. Com várias instâncias, trocaria por Redis.
  */
 export type RateLimitResult = { readonly ok: true } | { readonly ok: false; readonly retryAfterSec: number };
 
-export class SlidingWindowRateLimiter {
-  private readonly hits = new Map<string, number[]>();
+export class RateLimiter {
+  private readonly buckets = new Map<string, { tokens: number; at: number }>();
 
   constructor(
-    /** Máximo de eventos por janela; 0 desliga o limite. */
+    /** Mensagens seguidas permitidas (e o total por janela); 0 desliga o limite. */
     private readonly limit: number,
     private readonly windowMs: number = 60_000,
     private readonly now: () => number = Date.now,
@@ -20,14 +22,14 @@ export class SlidingWindowRateLimiter {
   hit(key: string): RateLimitResult {
     if (this.limit <= 0) return { ok: true };
     const t = this.now();
-    const recent = (this.hits.get(key) ?? []).filter((at) => at > t - this.windowMs);
-    if (recent.length >= this.limit) {
-      this.hits.set(key, recent);
-      const oldest = recent[0]!;
-      return { ok: false, retryAfterSec: Math.max(1, Math.ceil((oldest + this.windowMs - t) / 1000)) };
+    const perMs = this.limit / this.windowMs;
+    const bucket = this.buckets.get(key) ?? { tokens: this.limit, at: t };
+    const tokens = Math.min(this.limit, bucket.tokens + (t - bucket.at) * perMs);
+    if (tokens < 1) {
+      this.buckets.set(key, { tokens, at: t });
+      return { ok: false, retryAfterSec: Math.max(1, Math.ceil((1 - tokens) / perMs / 1000)) };
     }
-    recent.push(t);
-    this.hits.set(key, recent);
+    this.buckets.set(key, { tokens: tokens - 1, at: t });
     return { ok: true };
   }
 }

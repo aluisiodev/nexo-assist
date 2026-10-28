@@ -61,7 +61,7 @@ export function EmployeePanel({ conversation: c, tickets, onRetry, onClose, clas
 
       <div className="flex flex-col gap-1 border-b border-rule px-5 py-3 text-[12.5px] text-ink-3">
         <span>
-          {c.employeeMessageCount}/{c.messageLimit} mensagens nesta sessão
+          {c.employeeMessageCount}/{c.messageLimit} mensagens com o assistente
         </span>
         <span>
           Conversa iniciada em {formatDayMonth(c.createdAt)}, {formatTime(c.createdAt)}

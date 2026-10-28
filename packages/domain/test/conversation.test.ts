@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { agentCanRespond, analystCanWrite, employeeCanSend, transition, type ConversationState } from '../src';
+import {
+  agentCanRespond,
+  analystCanWrite,
+  employeeCanSend,
+  nextRoute,
+  transition,
+  type ConversationState,
+} from '../src';
 
 const agent: ConversationState = { status: 'agent', assignedAnalystId: null };
 const waiting: ConversationState = { status: 'waiting_analyst', assignedAnalystId: null };
@@ -60,10 +67,13 @@ describe('máquina de estados da conversa', () => {
     expect(agentCanRespond('with_analyst')).toBe(false);
   });
 
-  it('limite de 30 mensagens por sessão', () => {
-    expect(employeeCanSend('agent', 29)).toEqual({ ok: true });
-    expect(employeeCanSend('agent', 30)).toEqual({ ok: false, reason: 'limit_reached' });
-    expect(employeeCanSend('closed', 0)).toEqual({ ok: false, reason: 'closed' });
+  it('limite de 30 mensagens com o assistente; com analista, sem limite', () => {
+    expect(nextRoute('agent', 29)).toBe('agent');
+    expect(nextRoute('agent', 30)).toBe('limit_handoff');
+    expect(nextRoute('with_analyst', 30)).toBe('team');
+    expect(nextRoute('waiting_analyst', 99)).toBe('team');
+    expect(employeeCanSend('with_analyst')).toEqual({ ok: true });
+    expect(employeeCanSend('closed')).toEqual({ ok: false, reason: 'closed' });
   });
 
   it('só o analista que assumiu escreve', () => {

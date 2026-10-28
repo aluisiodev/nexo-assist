@@ -43,7 +43,7 @@ test.describe('chat do funcionário (Telas 2 e 3, modo básico)', () => {
     await expect(page.getByText('De segunda a sexta, das 8h às 18h').last()).toBeVisible();
     await page.reload();
     await expect(page.getByText('Qual o horário do service desk?')).toBeVisible();
-    await expect(page.getByText(/1\/30 mensagens nesta sessão/)).toBeVisible();
+    await expect(page.getByText(/1\/30 mensagens com o assistente/)).toBeVisible();
   });
 
   test('celular: sem rolagem horizontal', async ({ page }) => {

@@ -11,12 +11,15 @@ export const POST = withUser('employee', async (user, req) => {
   const { text } = SendMessageInputSchema.parse(await readJson(req));
   const { conversations, chatRateLimit } = await container();
 
-  const limit = chatRateLimit.hit(user.employeeId);
+  // O limite por minuto protege a cota de IA: só vale quando o assistente vai responder.
+  // Com um analista (ou aguardando um), o funcionário escreve no ritmo dele, sem espera.
+  const current = await conversations.getOrStart(user);
+  const limit = current.status === 'agent' ? chatRateLimit.hit(user.employeeId) : ({ ok: true } as const);
   if (!limit.ok) {
     const res = apiError(
       429,
       'rate_limited',
-      `Você enviou muitas mensagens seguidas. Aguarde ${limit.retryAfterSec} segundos e tente de novo.`,
+      `Você enviou muitas mensagens seguidas. Aguarde ${limit.retryAfterSec} ${limit.retryAfterSec === 1 ? 'segundo' : 'segundos'} e tente de novo.`,
     );
     res.headers.set('retry-after', String(limit.retryAfterSec));
     return res;

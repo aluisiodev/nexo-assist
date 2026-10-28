@@ -11,7 +11,7 @@ import { DraftRepository } from './drafts/repository';
 import { DraftService } from './drafts/service';
 import { env } from './env';
 import { AiBudget } from './limits/ai-budget';
-import { SlidingWindowRateLimiter } from './limits/rate-limiter';
+import { RateLimiter } from './limits/rate-limiter';
 
 export interface Container {
   readonly sessions: SessionRepository;
@@ -22,8 +22,8 @@ export interface Container {
   readonly serviceDesk: ServiceDeskClient;
   readonly serviceDeskAccess: ServiceDeskAccess;
   readonly responder: AgentResponder;
-  /** Mensagens por minuto por funcionário. */
-  readonly chatRateLimit: SlidingWindowRateLimiter;
+  /** Mensagens por minuto por funcionário para o assistente (protege a cota de IA). */
+  readonly chatRateLimit: RateLimiter;
 }
 
 /**
@@ -84,7 +84,7 @@ async function build(): Promise<Container> {
     serviceDesk,
     serviceDeskAccess,
     responder,
-    chatRateLimit: new SlidingWindowRateLimiter(e.CHAT_RATE_LIMIT_PER_MINUTE),
+    chatRateLimit: new RateLimiter(e.CHAT_RATE_LIMIT_PER_MINUTE),
   };
 }
 

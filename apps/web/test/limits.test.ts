@@ -6,26 +6,28 @@ import { BudgetedResponder } from '@/server/agent/budgeted-responder';
 import type { AgentContext, AgentReply, AgentResponder } from '@/server/agent/types';
 import { openAppDatabase } from '@/server/db/open';
 import { AiBudget } from '@/server/limits/ai-budget';
-import { SlidingWindowRateLimiter } from '@/server/limits/rate-limiter';
+import { RateLimiter } from '@/server/limits/rate-limiter';
 
 const tempDb = () => openAppDatabase(`file:${join(mkdtempSync(join(tmpdir(), 'nexo-limits-')), 'app.db')}`);
 
 describe('limite de mensagens por minuto', () => {
-  it('bloqueia a partir da 4ª mensagem no mesmo minuto e libera depois da janela', () => {
+  it('deixa passar uma rajada até o limite; depois espera só a próxima ficha, não o minuto inteiro', () => {
     let now = 0;
-    const limiter = new SlidingWindowRateLimiter(3, 60_000, () => now);
-    expect([1, 2, 3].map(() => limiter.hit('ana').ok)).toEqual([true, true, true]);
-
-    now = 20_000;
-    expect(limiter.hit('ana')).toEqual({ ok: false, retryAfterSec: 40 });
+    const limiter = new RateLimiter(10, 60_000, () => now);
+    for (let i = 0; i < 10; i++) expect(limiter.hit('ana').ok).toBe(true);
+    expect(limiter.hit('ana')).toEqual({ ok: false, retryAfterSec: 6 });
     expect(limiter.hit('bruno').ok).toBe(true); // cada funcionário tem o seu limite
 
-    now = 60_001;
+    now = 6_000; // uma ficha voltou
     expect(limiter.hit('ana').ok).toBe(true);
+    expect(limiter.hit('ana').ok).toBe(false);
+
+    now = 120_000; // depois de um tempo parado, a rajada inteira volta
+    for (let i = 0; i < 10; i++) expect(limiter.hit('ana').ok).toBe(true);
   });
 
   it('0 desliga o limite', () => {
-    const limiter = new SlidingWindowRateLimiter(0);
+    const limiter = new RateLimiter(0);
     for (let i = 0; i < 100; i++) expect(limiter.hit('ana').ok).toBe(true);
   });
 });

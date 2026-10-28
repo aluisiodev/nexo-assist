@@ -30,7 +30,8 @@ const env = {
   CHAOS_LATENCY_MS: '0',
   LLM_PROVIDER: 'none',
   LLM_FALLBACK_PROVIDER: 'none',
-  CHAT_RATE_LIMIT_PER_MINUTE: '0',
+  // Limite real com o assistente (o teste da conversa com analista confere que lá ele não vale).
+  CHAT_RATE_LIMIT_PER_MINUTE: '10',
   AI_DAILY_CALL_LIMIT: '0',
   PORT: String(WEB_PORT),
 };

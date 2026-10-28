@@ -6,7 +6,7 @@ Agent de atendimento do service desk de TI da Nexo. O funcionário descreve o pr
 - ✅ Chat do funcionário (Telas 2 e 3): rascunho com confirmação, transferência, "por quê?" em cada resposta
 - ✅ Agent com IA (Mastra + Gemini), com Groq como plano B e modo básico sem IA como reserva final
 - ✅ Console do analista (Telas 4 e 5): fila com filtros, conversa com as decisões do agent, assumir, responder, devolver e encerrar
-- ✅ Qualidade: 141 testes (Vitest), evals das decisões do agent contra a IA real e testes de ponta a ponta no navegador (Playwright)
+- ✅ Qualidade: 144 testes (Vitest), evals das decisões do agent contra a IA real e testes de ponta a ponta no navegador (Playwright)
 
 ## Como rodar
 
@@ -92,7 +92,7 @@ qualquer estado aberto ──encerrar──▶ encerrada
 
 - Enquanto a conversa está **aguardando** ou **com um analista**, o agent não responde. As mensagens do funcionário ficam registradas para o atendimento.
 - Só o analista que assumiu pode responder, devolver ou encerrar. Dois analistas não assumem a mesma conversa: as mudanças de estado usam **controle de concorrência otimista** (`version`), e o segundo recebe "Outro analista já assumiu esta conversa".
-- **Limite de 30 mensagens** do funcionário por sessão. "Nova conversa" encerra a atual e começa outra.
+- **Limite de 30 mensagens com o assistente** por sessão (as que gastam IA). Mensagens para o analista não contam: com a equipe, o contador fica pausado na tela ("12/30 com o assistente · pausado enquanto um analista atende") e volta a contar se a conversa voltar ao assistente. Ninguém precisa recomeçar a conversa no meio de um atendimento. Ao chegar a 30, o chat avisa; a mensagem seguinte vai para um analista (motivo "limite de mensagens da sessão"), sem travar. "Nova conversa" zera o contador.
 - Ao voltar outro dia, o funcionário continua a conversa que estava aberta. Se o analista encerrar com o chat aberto, o funcionário vê o aviso e o botão para começar outra.
 
 ## Como o agent decide o que fazer
@@ -136,7 +136,7 @@ Toda resposta do agent guarda um registro (`trace`): o que entendeu, a intençã
 
 `LLM_PROVIDER` e `LLM_FALLBACK_PROVIDER` no `.env` definem a ordem (padrão: Gemini → Groq). Se um provedor falha (cota, fora do ar, chave inválida, tempo esgotado, resposta malformada), o próximo assume e a troca aparece no "por quê?". Sem nenhuma chave, ou com os dois fora do ar, responde o **modo básico**: regras que consultam chamados, mostram prazos, buscam na central de ajuda, complementam chamados e transferem para um analista. Ele não abre chamados (sem IA, não dá para classificar com segurança).
 
-O failover só vale se a falha for detectada. Por isso, **uma resposta sem decisão registrada nunca chega ao funcionário**: se o modelo escreve texto em vez de chamar `responder` e não dá para ler a decisão nesse texto, o turno é descartado (inclusive o rascunho que ele tenha montado) e o próximo da cadeia responde. Alguns modelos (o gpt-oss no Groq, por exemplo) às vezes escrevem a decisão como JSON ou como "chave: valor" no texto; o código lê os dois formatos e valida com o mesmo schema da ferramenta.
+O failover só vale se a falha for detectada. Por isso, **uma resposta sem decisão registrada nunca chega ao funcionário**: se o modelo escreve texto em vez de chamar `responder` e não dá para ler a decisão nesse texto, o turno é descartado (inclusive o rascunho que ele tenha montado). Erro de formato (essa resposta sem decisão, ou uma chamada a uma ferramenta que não existe, que o Groq recusa com 400) ganha **uma nova tentativa no mesmo provedor**, porque costuma ser sorteio; se repetir, o próximo da cadeia responde. Cota, queda e tempo esgotado vão direto para o próximo. Alguns modelos (o gpt-oss no Groq, por exemplo) às vezes escrevem a decisão como JSON ou como "chave: valor" no texto; o código lê os dois formatos e valida com o mesmo schema da ferramenta.
 
 ### Escolha do modelo
 
@@ -155,7 +155,7 @@ O failover só vale se a falha for detectada. Por isso, **uma resposta sem decis
 
 Para uma versão publicada não esgotar a cota gratuita de IA, há dois limites, ambos no `.env` (0 desliga):
 
-- **`CHAT_RATE_LIMIT_PER_MINUTE` (padrão 10):** mensagens por minuto por funcionário. Uso normal nunca chega nele; quem passa vê "Aguarde N segundos" (HTTP 429 com `Retry-After`).
+- **`CHAT_RATE_LIMIT_PER_MINUTE` (padrão 10):** mensagens por minuto por funcionário **para o assistente**. Funciona como um balde de fichas: cabem 10 seguidas e uma ficha volta a cada 6 s, então quem passa espera no máximo alguns segundos ("Aguarde 6 segundos", HTTP 429 com `Retry-After`), não um minuto. Na conversa com analista (ou aguardando um), que não gasta IA, **não há limite por minuto**: o funcionário escreve no ritmo dele.
 - **`AI_DAILY_CALL_LIMIT` (padrão 300):** respostas com IA por dia no app todo, contadas no banco (sobrevivem a reinícios; o dia vira no fuso de São Paulo). Quando acaba, **o chat não bloqueia**: passa para o modo básico e o "por quê?" mostra que a cota foi atingida. Atalhos por regras não gastam cota.
 
 ## Console do analista (Telas 4 e 5)
@@ -190,7 +190,7 @@ Cabeçalhos: `x-api-key` (chave do serviço), `x-actor-id` (funcionário da sess
 - **Sessões no banco.** O cookie é `httpOnly` e `SameSite=Lax`, e o banco guarda só o hash do token. Sem "manter conectado", a sessão termina ao fechar o navegador (e expira em 12 h). Rotas que mudam estado também conferem a origem da requisição (proteção contra CSRF).
 - **Legado instável de propósito.** Quedas simuladas de alguns segundos (`CHAOS_*` no `.env`). O cliente repete com backoff e usa `Idempotency-Key` nas escritas, então uma criação repetida depois de uma queda não duplica o chamado.
 - **Prazos em horas úteis** (seg–sex, 8h–18h, UTC-3); "crítica" corre 24 h por causa do plantão. O prazo recomeça a cada atualização do suporte e pausa quando o chamado aguarda o funcionário.
-- **Dois bancos SQLite (libSQL)**, um por serviço, como seria com um sistema legado de verdade. Nada para instalar; em produção, o mesmo cliente fala com um libSQL remoto (Turso), só trocando a URL.
+- **Dois bancos SQLite (libSQL)**, um por serviço, como seria com um sistema legado de verdade. SQLite é um banco embutido: o banco é um arquivo, aberto pela própria aplicação, sem servidor para instalar. Cada serviço cria o arquivo e as tabelas ao subir (`CREATE TABLE IF NOT EXISTS`, idempotente) e o service desk insere os dados de exemplo se estiver vazio. Em produção, o mesmo cliente fala com um libSQL remoto (Turso), só trocando a URL.
 - **Fail fast de configuração.** Variáveis são validadas com zod na inicialização; em produção, o app se recusa a rodar com a chave de desenvolvimento.
 
 ## Qualidade
@@ -201,7 +201,17 @@ Em três camadas, da mais barata para a mais cara:
 
 1. **Regras em código, testadas.** O que pode ser calculado não depende do modelo: prioridade, prazo, duplicidade, reabertura, privacidade, confirmação e transferência obrigatória. Se o modelo errar, a regra corrige ou recusa.
 2. **Testes do agent com um modelo roteirizado** (`apps/web/test/agent.test.ts`). O Mastra, as ferramentas e o service desk são os reais; só o "cérebro" é simulado. Cobrem o que o código faz com cada decisão possível do modelo, inclusive as ruins: resposta sem decisão, JSON no texto, erro do provedor no meio do turno.
-3. **Evals contra a IA real** (`npm run evals`). Dez conversas com resultado esperado, tiradas do PRD e do Anexo A. Exemplos: "VPN no Windows 11" tem que passar pela central de ajuda antes do rascunho e gerar rascunho de prioridade alta, nunca um chamado direto; "notebook lento" tem que encontrar o INC-20311 e não tentar abrir outro; "vale-refeição" tem que dar fora de escopo e indicar o RH; o INC-20330 (de outro funcionário) não pode aparecer. Os critérios olham o comportamento (ferramentas chamadas, rascunho, transferência, cards), não o texto, que muda a cada execução. O script dá uma nota por provedor, mostra o que falhou e quanto custou (tempo e tokens), e grava o detalhe em `apps/web/evals/results/`. Um teste garante que os critérios aprovam o comportamento certo e reprovam o errado.
+3. **Evals contra a IA real** (`npm run evals`). Dez conversas com resultado esperado, tiradas do PRD e do Anexo A. Exemplos: "VPN no Windows 11" tem que passar pela central de ajuda antes do rascunho e gerar rascunho de prioridade alta, nunca um chamado direto; "notebook lento" tem que encontrar o INC-20311 e não tentar abrir outro; "vale-refeição" tem que dar fora de escopo e indicar o RH; o INC-20330 (de outro funcionário) não pode aparecer. Os critérios olham o comportamento (ferramentas chamadas, rascunho, transferência, cards), não o texto, que muda a cada execução. O script dá uma nota por provedor, mostra o que falhou e quanto custou (tempo e tokens), e grava o detalhe em `apps/web/evals/results/`. Quando o provedor recusa por limite por minuto (no plano gratuito do Gemini, 15 requisições), o caso espera a janela e é repetido, porque isso não é erro do agent. Um teste garante que os critérios aprovam o comportamento certo e reprovam o errado.
+
+### Resultado dos evals (28/10/2026)
+
+| Provedor | Nota | Casos perfeitos | Tempo e tokens por resposta | O que falhou |
+|---|---|---|---|---|
+| Gemini (`gemini-flash-lite-latest`), principal | **44/44 (100%)** | 10/10 | 3,0 s · 6,2 mil tokens | — |
+| Groq (`openai/gpt-oss-120b`), plano B | 30/44 (68%) | 7/10 | 26 s · 5,2 mil tokens | 2 casos com chamada de ferramenta malformada mesmo após a nova tentativa e 1 tempo esgotado. Nos 7 em que respondeu, decidiu certo. |
+| Groq (`qwen/qwen3.8-27b`), testado como alternativa | 14/44 (32%) | 3/10 | 18 s · 3,4 mil tokens | 8 respostas com erro. Pior que o gpt-oss: mantive o gpt-oss como plano B. |
+
+Na primeira rodada o Gemini fez 91%: os evals mostraram que ele não consultava os chamados ao receber um problema (deixava passar o INC-20311 aberto). Uma linha nas instruções corrigiu, e a rodada seguinte confirmou. É para isso que os evals existem. No app, quando o Groq falha, o modo básico responde; ele é um plano B de melhor esforço.
 
 ### Testes
 
@@ -214,7 +224,7 @@ Em três camadas, da mais barata para a mais cara:
 | Modo básico | Respostas contra o service desk real (sem rede), inclusive com o sistema fora do ar |
 | Agent com IA | Modelo **simulado** com roteiro: fluxo da Tela 2, duplicidade, privacidade, baixa confiança, caso crítico, confirmação por texto, Gemini → Groq → modo básico, resposta sem decisão descartada |
 | Evals | `npm run evals`: 10 casos com nota, contra o Gemini e o Groq |
-| Navegador | `npm run test:e2e` (Playwright, build de produção): login e perfis, chat, "por quê?", privacidade, recarregar sem perder a conversa, transferência com duas pessoas ao mesmo tempo (funcionária e analista), dois analistas disputando a conversa, celular sem rolagem horizontal |
+| Navegador | `npm run test:e2e` (Playwright, build de produção): login e perfis, chat, "por quê?", privacidade, recarregar sem perder a conversa, transferência com duas pessoas ao mesmo tempo (funcionária e analista), dois analistas disputando a conversa, conversa com analista sem limite por minuto e com o contador pausado, celular sem rolagem horizontal |
 
 Os testes de ponta a ponta rodam sem IA (modo básico), em portas próprias (3100 e 4110) e com bancos temporários, para darem o mesmo resultado em qualquer máquina. As decisões da IA ficam com os testes do agent e os evals.
 
@@ -241,6 +251,7 @@ Os testes de ponta a ponta rodam sem IA (modo básico), em portas próprias (310
 - **Atribuição automática** por grupo e carga, e alerta quando o prazo da transferência estiver para vencer.
 - **Autenticação real** (SSO da empresa) e trilha de auditoria de quem viu cada conversa.
 - **Tabela de feriados** no cálculo de prazo e **Redis** para o limite por minuto com várias instâncias.
+- **Migrações versionadas** do banco. Hoje o esquema é criado ao subir (`CREATE TABLE IF NOT EXISTS`), o que basta enquanto as tabelas não mudam; para alterar uma tabela já existente (uma coluna nova), entraria uma tabela de versão do esquema e scripts numerados (ou uma ferramenta como Drizzle Kit).
 - **Acessibilidade revisada** com leitor de tela em todo o fluxo e testes automáticos de contraste (axe) nos testes de ponta a ponta.
 
 ## Publicar

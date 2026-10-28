@@ -11,7 +11,7 @@ type AgentModel = ConstructorParameters<typeof Agent>[0]['model'];
 export type ScriptStep =
   | { readonly tools: readonly { readonly name: string; readonly args: Record<string, unknown> }[] }
   | { readonly text: string }
-  | { readonly error: Error };
+  | { readonly error: Error; readonly once?: boolean };
 
 const usage = {
   inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
@@ -28,7 +28,11 @@ export function scriptedModel(script: readonly ScriptStep[]) {
       prompts.push(options.prompt);
       const step = steps[0] ?? { text: '(fim do roteiro)' };
       // Falha "persistente": o provedor continua fora do ar mesmo com novas tentativas.
-      if ('error' in step) throw step.error;
+      // Com `once`, a falha acontece uma vez só (ex.: chamada malformada que se resolve ao repetir).
+      if ('error' in step) {
+        if (step.once) steps.shift();
+        throw step.error;
+      }
       steps.shift();
       const parts: unknown[] = [{ type: 'stream-start', warnings: [] }];
       if ('text' in step) {

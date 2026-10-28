@@ -67,9 +67,32 @@ export class LlmResponder implements AgentResponder {
     });
   }
 
+  /**
+   * Gera a resposta. Se o modelo errar o FORMATO (chamada de ferramenta inválida ou
+   * resposta sem decisão), tenta mais uma vez: é sorteio, e a segunda costuma sair certa.
+   * Falha do provedor (cota, fora do ar, tempo) vai direto para o próximo da cadeia.
+   */
   async respond(ctx: AgentContext, emit?: AgentEmitter): Promise<AgentReply> {
     const started = Date.now();
-    const turn = new TurnState(ctx, this.deps, emit);
+    let previous: string | null = null;
+    for (let attempt = 1; ; attempt++) {
+      const turn = new TurnState(ctx, this.deps, emit);
+      if (previous) {
+        turn.step({ label: 'o modelo errou o formato, tentei de novo', detail: previous, status: 'error' });
+      }
+      try {
+        return await this.attempt(ctx, turn, started);
+      } catch (err) {
+        if (err instanceof MalformedOutputError && attempt < MAX_ATTEMPTS) {
+          previous = err.message;
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  private async attempt(ctx: AgentContext, turn: TurnState, started: number): Promise<AgentReply> {
     const requestContext = new RequestContext();
     requestContext.set(TURN_KEY as never, turn as never);
 
@@ -100,7 +123,8 @@ export class LlmResponder implements AgentResponder {
       tokens = usage?.totalTokens;
     } catch (err) {
       await this.discard(turn);
-      throw new ResponderUnavailableError(this.name, describeError(err), { cause: err });
+      const Kind = isMalformedOutput(err) ? MalformedOutputError : ResponderUnavailableError;
+      throw new Kind(this.name, describeError(err), { cause: err });
     }
 
     // Alguns modelos (ex.: gpt-oss no Groq) escrevem a resposta final no texto em vez de
@@ -122,7 +146,7 @@ export class LlmResponder implements AgentResponder {
     const final = turn.final;
     if (!final) {
       await this.discard(turn);
-      throw new ResponderUnavailableError(
+      throw new MalformedOutputError(
         this.name,
         text.trim()
           ? 'o modelo respondeu sem registrar a decisão; a resposta foi descartada'
@@ -204,6 +228,26 @@ export class LlmResponder implements AgentResponder {
       .discard(turn.draft.id, turn.ctx.pendingDraft ?? null, turn.ctx.now)
       .catch((err: unknown) => console.warn('[agent] não consegui desfazer o rascunho', turn.draft?.id, err));
   }
+}
+
+/** Tentativas por resposta quando o modelo erra o formato (não quando o provedor falha). */
+const MAX_ATTEMPTS = 2;
+
+/** O modelo respondeu, mas fora do formato: vale tentar de novo antes de trocar de provedor. */
+class MalformedOutputError extends ResponderUnavailableError {}
+
+/**
+ * Chamada de ferramenta malformada, recusada pelo provedor (ex.: Groq: "Parsing failed",
+ * "attempted to call tool 'json' which was not in request.tools").
+ */
+export function isMalformedOutput(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { statusCode?: number; status?: number; message?: string };
+  const status = e.statusCode ?? e.status;
+  return (
+    (status === undefined || status === 400) &&
+    /tool call validation|parsing failed|failed_generation|not in request\.tools/i.test(e.message ?? '')
+  );
 }
 
 /** Mensagem curta e sem dados sensíveis para o registro de decisões. */

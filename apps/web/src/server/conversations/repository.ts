@@ -60,6 +60,8 @@ export interface NewMessage {
   readonly text: string;
   readonly blocks?: readonly MessageBlock[];
   readonly trace?: AgentTrace | null;
+  /** Mensagem do funcionário respondida pelo assistente: conta no limite da sessão. */
+  readonly countsTowardLimit?: boolean;
 }
 
 /** Campos alterados numa mudança de estado. */
@@ -195,7 +197,7 @@ export class ConversationRepository {
   async appendMessage(conversationId: string, message: NewMessage, now: Date): Promise<ChatMessage> {
     const id = randomUUID();
     const at = now.toISOString();
-    const countIncrement = message.role === 'employee' ? 1 : 0;
+    const countIncrement = message.role === 'employee' && message.countsTowardLimit ? 1 : 0;
     await this.db.batch(
       [
         {

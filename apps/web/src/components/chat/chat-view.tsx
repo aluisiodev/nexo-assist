@@ -35,9 +35,11 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
 
   const sending = working;
   const lastSeq = messages.at(-1)?.seq ?? 0;
-  const limitReached = conversation.employeeMessageCount >= conversation.messageLimit;
+  // O limite vale só para o assistente; ao acabar, a próxima mensagem vai para um analista.
+  const withAgent = conversation.status === 'agent';
+  const limitReached = withAgent && conversation.employeeMessageCount >= conversation.messageLimit;
   const closed = conversation.status === 'closed';
-  const canWrite = !sending && !limitReached && !closed;
+  const canWrite = !sending && !closed;
 
   // Rola para o fim quando chegam mensagens.
   useEffect(() => {
@@ -250,12 +252,12 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
               onKeyDown={onKeyDown}
               rows={1}
               maxLength={2000}
-              disabled={limitReached || closed}
+              disabled={closed}
               placeholder={
                 closed
                   ? 'Conversa encerrada.'
                   : limitReached
-                    ? 'Limite de mensagens atingido. Inicie uma nova conversa.'
+                    ? 'Escreva para um analista continuar com você…'
                     : conversation.status === 'agent'
                       ? 'Escreva para o Nexo…'
                       : 'Escreva para o analista…'
@@ -275,9 +277,16 @@ export function ChatView({ initial, engine }: { initial: ChatSnapshot; engine: s
               Enviar
             </button>
           </div>
-          <p className={`text-right text-[12.5px] ${limitReached ? 'text-danger-text' : 'text-ink-3'}`}>
-            {conversation.employeeMessageCount}/{conversation.messageLimit} mensagens nesta sessão
-          </p>
+          {!closed && (
+            <p className={`text-right text-[12.5px] ${limitReached ? 'text-warning-text' : 'text-ink-3'}`}>
+              {limitReached
+                ? 'Limite com o assistente atingido: a próxima mensagem vai para um analista'
+                : withAgent
+                  ? `${conversation.employeeMessageCount}/${conversation.messageLimit} mensagens com o assistente nesta sessão`
+                  : // Com a equipe, o contador fica parado e volta a contar se a conversa voltar ao assistente.
+                    `${conversation.employeeMessageCount}/${conversation.messageLimit} com o assistente · pausado enquanto um analista atende`}
+            </p>
+          )}
         </form>
       </div>
     </ChatActionsContext.Provider>

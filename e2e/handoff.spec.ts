@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { ANA, freshChat, JULIANA, login, personFor, RAFAEL, send } from './helpers';
+import { ANA, DIEGO, freshChat, JULIANA, login, personFor, RAFAEL, send } from './helpers';
 
 /**
  * O fluxo completo da transferência, com duas pessoas ao mesmo tempo (dois navegadores):
@@ -32,6 +32,9 @@ test('transferência: funcionária pede analista; analista assume, responde, dev
   // Enquanto aguarda, a funcionária continua escrevendo e a analista vê.
   await send(ana, 'Estou com pressa, por favor');
   await expect(juliana.getByText('Estou com pressa, por favor')).toBeVisible();
+
+  // Com a equipe, o contador do assistente fica pausado (a conversa com analista não tem limite).
+  await expect(ana.getByText(/pausado enquanto um analista atende/)).toBeVisible();
 
   // Assumir: o agent pausa e os dois lados veem o aviso.
   await juliana.getByRole('button', { name: 'Assumir' }).click();
@@ -84,6 +87,17 @@ test('chamado vencido vai para o N2 com o motivo e o chamado relacionado', async
   await expect(rafael.getByText('Encerrada por Rafael Lima').first()).toBeVisible();
 });
 
+test('com analista não há limite por minuto nem contador correndo', async ({ browser }) => {
+  // O app destes testes usa o limite de 10 mensagens por minuto com o assistente.
+  const diego = await personFor(browser, DIEGO);
+  await freshChat(diego);
+  await send(diego, 'Quero falar com um analista');
+  await expect(diego.getByText(/Transferida para Suporte/)).toBeVisible();
+  for (let i = 1; i <= 12; i++) await sendAndWait(diego, `detalhe número ${i}`);
+  await expect(diego.getByText(/Aguarde/)).toHaveCount(0);
+  await expect(diego.getByText(/1\/30 com o assistente · pausado enquanto um analista atende/)).toBeVisible();
+});
+
 test('console no celular: fila → conversa → voltar', async ({ browser }) => {
   const ana = await personFor(browser, ANA);
   await freshChat(ana);
@@ -106,3 +120,9 @@ const conversationRow = (page: Page, name: string) =>
 
 const filter = (page: Page, label: string) =>
   page.getByRole('group', { name: 'Filtros' }).getByRole('button', { name: new RegExp(`^${label}`) });
+
+/** Envia e espera a mensagem aparecer (o campo só libera depois do envio). */
+async function sendAndWait(page: Page, text: string) {
+  await send(page, text);
+  await expect(page.getByText(text, { exact: true })).toBeVisible();
+}

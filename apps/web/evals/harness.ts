@@ -23,6 +23,8 @@ export interface ReplyObservation {
   readonly options: readonly string[];
   readonly durationMs: number;
   readonly tokens: number;
+  /** Motivo da falha, quando a resposta falhou (ex.: cota do provedor). */
+  readonly failure: string | undefined;
 }
 
 /** O que aconteceu na conversa, do jeito que os critérios precisam ver. */
@@ -136,6 +138,7 @@ function toReply(m: ChatMessage): ReplyObservation {
     options: quick?.type === 'quick_replies' ? quick.options.map((o) => o.label) : [],
     durationMs: m.trace?.durationMs ?? 0,
     tokens: m.trace?.tokens ?? 0,
+    failure: m.trace?.intent === 'erro' ? m.trace.steps.find((st) => st.status === 'error')?.detail : undefined,
   };
 }
 
@@ -166,3 +169,7 @@ export function summarize(results: readonly CaseResult[]): Summary {
     avgTokensPerReply: avg(replies.map((r) => r.tokens)),
   };
 }
+
+/** A falha foi a cota por minuto do provedor (não é erro do agent: vale esperar e repetir). */
+export const hitRateLimit = (r: CaseResult): boolean =>
+  r.observation.replies.some((x) => /429|limite de uso|quota/i.test(x.failure ?? ''));

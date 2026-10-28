@@ -60,16 +60,30 @@ describe('conversa do funcionário', () => {
     expect(reply.blocks[0]).toMatchObject({ type: 'quick_replies' });
   });
 
-  it('limite de 30 mensagens por sessão; nova conversa zera o contador', async () => {
+  it('limite de 30 mensagens com o assistente: avisa, depois chama um analista (sem travar o chat)', async () => {
     for (let i = 0; i < 30; i++) await service.sendEmployeeMessage(ANA, `mensagem ${i}`);
-    await expect(service.sendEmployeeMessage(ANA, 'mais uma')).rejects.toMatchObject({
-      code: 'limit_reached',
-      status: 429,
-    });
+    const conv = await service.getOrStart(ANA);
+    expect(conv.employeeMessageCount).toBe(30);
+    const last = (await service.snapshotFor(ANA)).messages.at(-1);
+    expect(last).toMatchObject({ role: 'system' });
+    expect(last?.text).toMatch(/próxima mensagem vai para um analista/);
+
+    responder.calls = [];
+    const over = await service.sendEmployeeMessage(ANA, 'mais uma');
+    expect(responder.calls).toHaveLength(0); // não gastou IA
+    expect(over.conversation).toMatchObject({ status: 'waiting_analyst', handoffReason: 'message_limit' });
+    expect(over.messages.map((m) => m.role)).toEqual(['employee', 'system', 'system']);
 
     const snap = await service.startNew(ANA);
     expect(snap.conversation.employeeMessageCount).toBe(0);
-    expect(snap.messages).toEqual([]);
+  });
+
+  it('mensagens para o analista não contam no limite', async () => {
+    const conv = await service.getOrStart(ANA);
+    await service.assume(RAFAEL, conv.id);
+    for (let i = 0; i < 35; i++) await service.sendEmployeeMessage(ANA, `para o analista ${i}`);
+    const after = await service.getOrStart(ANA);
+    expect(after).toMatchObject({ status: 'with_analyst', employeeMessageCount: 0 });
   });
 });
 

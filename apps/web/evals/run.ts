@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LlmResponder } from '../src/server/agent/llm/llm-responder';
 import { CASES } from './cases';
-import { runCase, summarize, type CaseResult } from './harness';
+import { hitRateLimit, runCase, summarize, type CaseResult } from './harness';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../../..');
@@ -43,6 +43,17 @@ const targets: Provider[] = providerArgs.length ? providerArgs : ['google', 'gro
 const cases = filter ? CASES.filter((c) => c.id.includes(filter)) : CASES;
 const minScore = Number(process.env.EVALS_MIN_SCORE ?? 0.8);
 
+const RATE_LIMIT_WAIT_S = Number(process.env.EVALS_RATE_LIMIT_WAIT_S ?? 60);
+
+// O Mastra imprime o erro bruto do provedor (dezenas de linhas). Aqui o resultado do caso
+// já diz o que falhou, então essas mensagens ficam de fora para o relatório ser legível.
+const consoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  const first = typeof args[0] === 'string' ? args[0] : '';
+  if (/^(Upstream LLM API error|Error in agent stream)/.test(first)) return;
+  consoleError(...args);
+};
+
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 async function evaluate(provider: Provider) {
@@ -55,19 +66,30 @@ async function evaluate(provider: Provider) {
   }
   const results: CaseResult[] = [];
   for (const c of cases) {
-    const result = await runCase(
-      (deps) =>
-        new LlmResponder({
-          name,
-          model: `${provider}/${p.model}`,
-          deps,
-          toolChoice: p.toolChoice,
-          ...(provider === 'groq' && p.model.includes('gpt-oss')
-            ? { providerOptions: { groq: { reasoningEffort: 'low' } } }
-            : {}),
-        }),
-      c,
-    );
+    const run = () =>
+      runCase(
+        (deps) =>
+          new LlmResponder({
+            name,
+            model: `${provider}/${p.model}`,
+            deps,
+            toolChoice: p.toolChoice,
+            ...(provider === 'groq' && p.model.includes('gpt-oss')
+              ? { providerOptions: { groq: { reasoningEffort: 'low' } } }
+              : {}),
+          }),
+        c,
+      );
+    // Plano gratuito tem limite por minuto (no Gemini, 15 requisições): isso não é erro do
+    // agent, então esperamos a janela passar e repetimos o caso.
+    let result = await run();
+    for (let retry = 1; retry <= 3 && hitRateLimit(result); retry++) {
+      console.log(
+        `  … ${c.id}: limite por minuto do provedor, aguardando ${RATE_LIMIT_WAIT_S} s (tentativa ${retry}/3)`,
+      );
+      await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_S * 1000));
+      result = await run();
+    }
     results.push(result);
     const total = result.passed.length + result.failed.length;
     const mark = result.failed.length === 0 ? '✓' : '✗';
