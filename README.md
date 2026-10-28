@@ -29,12 +29,7 @@ Abra http://localhost:3000 e entre com um e-mail dos dados de exemplo e **qualqu
 
 Sem chave de IA o app funciona no **modo básico** (regras, sem IA). Com uma chave gratuita do Gemini (`GOOGLE_GENERATIVE_AI_API_KEY`) e/ou do Groq (`GROQ_API_KEY`) no `.env`, o agent com IA assume. Os bancos SQLite são criados na primeira execução e **sobrevivem a reinícios**.
 
-### Roteiro de 5 minutos
 
-1. Entre como **Ana** e escreva "Meu notebook não conecta na VPN desde ontem. Aparece o erro 809. Uso Windows 11.". O agent busca na central de ajuda (o artigo só vale para Windows 10), confere os chamados da Ana e pergunta quem é afetado.
-2. Responda "Só eu, tenho reunião com cliente às 14h". Aparece o **rascunho** com prioridade alta (calculada pelo código, não pela IA). Clique em **por quê?** para ver o que o agent entendeu, as ferramentas que chamou e o grau de segurança. **Confirmar** cria o chamado.
-3. Escreva "Quero falar com um analista". A conversa vai para a fila e o agent fica em pausa.
-4. Em outra janela anônima, entre como **Juliana** (N1). A conversa aparece em **Para você**, com o resumo da transferência e o prazo para responder. Clique em **Assumir**, responda e veja a mensagem chegar no chat da Ana. Depois **Devolver ao agent** ou **Encerrar**.
 
 ### Comandos
 
